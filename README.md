@@ -7,34 +7,34 @@
 <a name="chinese"></a>
 ## 中文说明
 
-NeuralScaler 4K 是一款专为消费级显卡（特别是 8GB 显存设备，如 RTX 4070 Laptop / 4060 / 3070）深度优化的轻量级离线 4K 视频神经重绘与超分辨率工作站。它集成了硬件级视频超分引擎、分块显存熔断保护机制以及毫秒级帧锁同步的双源对比播放器，提供兼具工业级稳定度与现代化质感的操作体验。
+NeuralScaler 4K 是基于 NVIDIA DLSS 5（深度学习超分辨率 5 代）神经重绘技术开发的离线高性能 4K 视频超分辨率工作站。项目集成了 DLSS 5 硬件加速管线、时空运动矢量光流推断、动态显存保护机制以及硬件级双源锁步对比播放器，专为高画质、低延迟的本地化视频重绘场景设计。
 
-### 核心特性
+### 核心技术架构与特性
 
-1. **8GB 显存极致保护与硬件超分**
-   - 采用分块流式处理机制与动态显存熔断监测，将 4K 重绘全流程显存峰值严格压制在 6.2GB 以内，彻底杜绝 CUDA Out of Memory (OOM) 崩溃。
-   - 深度集成硬件级超分与运动矢量光流推断，大幅提升低清视频（540p / 720p / 1080p）至 4K 极清画质的重绘效率与保真度。
+1. **基于 NVIDIA DLSS 5 的神经重绘与硬件超分**
+   - 深度集成 NVIDIA DLSS 5 神经超分运行时（NVNGX 原生动态库 `nvngx_dlss.dll`、`nvngx_dlssd.dll`、`nvngx_dlssnr.dll`）。
+   - 结合硬件级 Tensor Core 与光流加速器（Optical Flow Accelerator, OFA），利用多帧时域相关性与亚像素运动矢量，将低分辨率输入（540p / 720p / 1080p）精准重建至 4K 极清视频。
+   - 相比传统双三次插值或常规深度学习放大，DLSS 5 能有效消除闪烁与伪影，显著提升细密纹理与运动边缘的保真度。
 
-2. **硬件级锁步对比播放器 (Hover Wipe Player)**
-   - 搭载连续自适应锁步同步引擎（Phase-Locked Loop），通过实时毫秒级相位误差反馈微调播放倍率，杜绝高码率 4K 流与低码率原片之间的时序漂移。
-   - 交互式无级卷帘对比与定格比对支持，实现 $dx=0, dy=0$ 的像素级物理对齐与实时细节明暗反差校验。
+2. **流式分块处理与显存熔断保护**
+   - 具备流式分块分片处理管道与实时显存熔断感知机制，在持续大吞吐超分任务中稳定运行，杜绝 CUDA 显存溢出（Out of Memory）异常。
+   - 支持主流 NVIDIA GeForce RTX 系列独立显卡，自适应匹配物理计算单元与显存配置。
 
-3. **Windows 11 Fluent 现代交互与原生顶栏沉浸适配**
-   - 遵循 Windows 11 Fluent Design 规范，全界面采用矢量精绘 SVG 图标，杜绝 Emoji 表情符号。
-   - 动态拉取物理 GPU 设备拓扑与显存规格，提供硬件级下拉切换。
-   - 通过 Windows DWMAPI (`DwmSetWindowAttribute`) 与 Edge 窗口元信息联动，实现原生操作系统级顶栏按钮（最小化、最大化、关闭）与亮色/暗色主题无缝同步切换。
+3. **硬件级锁步对比播放器 (Hover Wipe Player)**
+   - 搭载连续自适应锁步同步引擎（Phase-Locked Loop），通过实时毫秒级相位误差反馈微调播放倍率，杜绝高码率 4K 重构流与原片之间的时序漂移。
+   - 交互式无级卷帘对比与定格比对支持，实现 $dx=0, dy=0$ 的像素级物理对齐与实时细节反差校验。
 
 4. **进程生命周期闭环托管**
-   - 具备前端心跳探测（Heartbeat）与关闭信标（Beacon），视窗关闭即刻联动清理后台服务与终端进程，杜绝控制台孤儿残留。
+   - 具备前端心跳探测与视窗关闭信标，客户端关闭即刻联动安全销毁后台核心服务与控制台进程，确保运行环境整洁无残留。
 
 ---
 
 ### 系统要求
 
-- **操作系统**: Windows 10 / Windows 11 64位
-- **显卡**: NVIDIA GeForce RTX 20 / 30 / 40 系列独立显卡（推荐 8GB 或以上显存）
+- **操作系统**: Windows 10 / Windows 11 64 位
+- **显卡**: NVIDIA GeForce RTX 系列独立显卡
 - **驱动要求**: NVIDIA 驱动版本 >= 535.00
-- **浏览器**: Microsoft Edge（Windows 默认内置）
+- **浏览器**: Microsoft Edge（系统内置）
 
 ---
 
@@ -42,7 +42,7 @@ NeuralScaler 4K 是一款专为消费级显卡（特别是 8GB 显存设备，�
 
 #### 方式 A：便携绿色包运行（免安装）
 1. 从 Releases 页面下载 `NeuralScaler-4K-Portable-v*.zip` 并解压。
-2. 双击解压目录中的 `NeuralScaler.bat` 即可自动启动工作站视窗。
+2. 双击解压目录中的 `NeuralScaler.bat` 即可自动启动引擎并唤起工作站。
 
 #### 方式 B：源码构建与本地运行
 ```powershell
@@ -50,14 +50,11 @@ NeuralScaler 4K 是一款专为消费级显卡（特别是 8GB 显存设备，�
 git clone https://github.com/justForever17/NeuralScaler-4K.git
 cd NeuralScaler-4K
 
-# 2. 安装前端依赖并构建静态资产
+# 2. 安装依赖并构建前端
 npm install
 npm run build
 
-# 3. 安装 Python 核心依赖（如已具备标准环境可跳过）
-pip install -r requirements.txt # 或使用环境内 Python
-
-# 4. 运行服务与视窗
+# 3. 运行服务与视窗
 python server.py
 ```
 
@@ -66,14 +63,14 @@ python server.py
 <a name="english"></a>
 ## English
 
-NeuralScaler 4K is an offline, lightweight 4K video super-resolution workstation specifically engineered and optimized for consumer GPUs with 8GB VRAM (such as NVIDIA RTX 4070 Laptop, RTX 4060, and RTX 3070). Featuring hardware-accelerated neural reconstruction, robust VRAM circuit breaker protection, and a frame-locked dual-source comparison player, it delivers industrial-grade stability with a modern, native Windows 11 desktop experience.
+NeuralScaler 4K is an offline, high-performance 4K video super-resolution workstation developed upon NVIDIA DLSS 5 (Deep Learning Super Sampling 5) neural reconstruction technology. It integrates native DLSS 5 hardware pipelines, temporal-spatial motion vector inference, dynamic VRAM safeguard mechanisms, and a frame-locked dual-source comparison player.
 
-### Key Highlights
+### Architecture & Key Features
 
-- **VRAM Safeguard for 8GB Cards**: Streamlined chunking and hardware-level telemetry ensure peak VRAM usage remains strictly under 6.2GB during 4K neural reconstruction, eliminating Out-of-Memory faults.
-- **Frame-Locked Comparison Player**: Phase-locked loop synchronization dynamically compensates for decoding latency between raw inputs and high-bitrate 4K streams, ensuring exact lockstep alignment without visual temporal drift.
-- **Native Windows 11 Integration**: Pure SVG iconography, discrete GPU selector, and seamless DWMAPI titlebar skin switching (dark and light modes).
-- **Automated Lifecycle Management**: Automatic cleanup of background server and terminal processes upon window exit.
+- **NVIDIA DLSS 5 Neural Reconstruction**: Harnesses native NVNGX runtimes (`nvngx_dlss.dll`, `nvngx_dlssd.dll`, `nvngx_dlssnr.dll`) alongside Tensor Core acceleration and Optical Flow inference to accurately reconstruct low-resolution inputs into ultra-clear 4K videos with minimal temporal artifacts.
+- **VRAM Safeguard & Chunked Streaming**: Robust stream chunking and continuous hardware telemetry prevent CUDA Out-of-Memory faults during intensive 4K reconstruction workloads across NVIDIA GeForce RTX series GPUs.
+- **Frame-Locked Comparison Player**: Phase-locked loop synchronization dynamically compensates for browser decoding disparities between original footage and high-bitrate 4K exports, guaranteeing strict $dx=0, dy=0$ spatial alignment and zero temporal drift.
+- **Automated Lifecycle Management**: Automatic cleanup of backend server and console processes upon client exit.
 
 ---
 
