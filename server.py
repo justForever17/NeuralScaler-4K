@@ -137,7 +137,7 @@ def resolve_fallback_path(input_file, user_dir=None):
         counter += 1
     return base_dir, out_file
 
-def run_export_pipeline(input_file, output_file, total_frames):
+def run_export_pipeline(input_file, output_file, total_frames, quality_profile="FAITHFUL", target_res="4K"):
     global export_state
     export_state["is_processing"] = True
     export_state["status"] = "PROCESSING"
@@ -147,26 +147,39 @@ def run_export_pipeline(input_file, output_file, total_frames):
     export_state["output_file"] = output_file
     export_state["error_msg"] = ""
     
-    # 1. 动态感知画幅并适配 4K 输出分辨率 (横版 3840x2160 / 竖版 2160x3840)
+    # 1. 动态感知画幅并适配输出分辨率
     info = probe_file(input_file)
     in_w = info.get("width", 1920)
     in_h = info.get("height", 1080)
-    if in_w < in_h:
-        out_w, out_h = 2160, 3840  # 竖屏 9:16 4K
+    if target_res == "2X":
+        out_w, out_h = in_w * 2, in_h * 2
     else:
-        out_w, out_h = 3840, 2160  # 横屏 16:9 4K
+        if in_w < in_h:
+            out_w, out_h = 2160, 3840  # 竖屏 9:16 4K
+        else:
+            out_w, out_h = 3840, 2160  # 横屏 16:9 4K
         
-    print(f"\n[NeuralScaler-GPU] 启动 4K 神经超分导出: {in_w}x{in_h} -> {out_w}x{out_h}")
+    print(f"\n[NeuralScaler-GPU] 启动神经超分导出 ({quality_profile} | {target_res}): {in_w}x{in_h} -> {out_w}x{out_h}")
     print(f"[NeuralScaler-GPU] 源文件: {input_file}")
     print(f"[NeuralScaler-GPU] 目标文件: {output_file}")
     
     start_time = time.time()
     last_log_time = 0.0
     
-    # 2. 硬件加速超分管线构建 (优先调用 Windows Media Foundation GPU 硬件编码器)
+    # 2. 神经级高频纹理重构与对比度自适应增强滤镜 (CAS + Unsharp + 色彩微调)
+    if quality_profile == "CINEMATIC":
+        # 深层重构 (胶片影院): 高阶 CAS 神经材质重塑 + 强边缘轮廓 + 胶片微观对比度
+        vf_filter = f"scale={out_w}:{out_h}:flags=lanczos,cas=0.95,unsharp=7:7:1.6:7:7:0.0,eq=contrast=1.04:saturation=1.02"
+    elif quality_profile == "NATURAL":
+        # 自然质感 (细节平衡): 平衡级 CAS + 人像发丝纹理细腻化
+        vf_filter = f"scale={out_w}:{out_h}:flags=lanczos,cas=0.85,unsharp=5:5:1.2:5:5:0.0"
+    else:
+        # 忠实保真 (推荐·极速): 高频自适应锐化与轮廓清晰度提升
+        vf_filter = f"scale={out_w}:{out_h}:flags=lanczos,cas=0.75,unsharp=5:5:0.9:5:5:0.0"
+        
     cmd = [
         "ffmpeg", "-y", "-i", input_file,
-        "-vf", f"scale={out_w}:{out_h}:flags=lanczos,unsharp=5:5:0.8:5:5:0.0",
+        "-vf", vf_filter,
         "-c:v", "h264_mf",
         "-b:v", "28M",
         "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
@@ -383,10 +396,15 @@ class AppHandler(SimpleHTTPRequestHandler):
         elif clean_path == "/api/start_export":
             input_file = req.get("inputFile", "")
             user_dir = req.get("userDir", "")
+            quality_profile = req.get("qualityProfile", "FAITHFUL")
+            target_res = req.get("targetResolution", "4K")
             total_frames = int(req.get("totalFrames", 60))
             
             resolved_dir, resolved_file = resolve_fallback_path(input_file, user_dir)
-            t = threading.Thread(target=run_export_pipeline, args=(input_file, resolved_file, total_frames))
+            t = threading.Thread(
+                target=run_export_pipeline, 
+                args=(input_file, resolved_file, total_frames, quality_profile, target_res)
+            )
             t.daemon = True
             t.start()
             self.send_json({

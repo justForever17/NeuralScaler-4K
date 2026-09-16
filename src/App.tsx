@@ -7,16 +7,16 @@ import { VideoMetadata, AppConfig, TelemetryState, QualityProfile } from './type
 
 export const App: React.FC = () => {
   const [video, setVideo] = useState<VideoMetadata | null>({
-    filePath: 'C:\\Users\\sunny\\Desktop\\1\\素材\\微信视频2026-07-23_010220_787.mp4',
-    fileName: '微信视频2026-07-23_010220_787.mp4',
-    width: 1080,
-    height: 1920,
-    durationSeconds: 15.0,
+    filePath: 'C:\\Users\\sunny\\Desktop\\1\\微信视频2026-09-16_105304_528.mp4',
+    fileName: '微信视频2026-09-16_105304_528.mp4',
+    width: 540,
+    height: 960,
+    durationSeconds: 15.07,
     fps: 30,
     codec: 'h264',
-    fileSizeBytes: 8729217,
+    fileSizeBytes: 2454078,
     status: 'RECOMMENDED',
-    statusMessage: '推荐输入画质 (1080x1920)，支持 4K 神经重绘与硬件超分加速。'
+    statusMessage: '推荐输入画质 (540x960)，支持 4K 神经重绘与硬件超分加速。'
   });
 
   const [outputVideoFile, setOutputVideoFile] = useState<string>('');
@@ -25,7 +25,7 @@ export const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig>({
     qualityProfile: 'FAITHFUL',
     outputDir: '',
-    fallbackDir: 'C:\\Users\\sunny\\Desktop\\1\\素材\\output_4k\\',
+    fallbackDir: 'C:\\Users\\sunny\\Desktop\\1\\output_4k\\',
     namingTemplate: '{filename}_4K_DLSS5.mp4',
     enableFaststart: true,
     colorStandard: 'BT.709',
@@ -36,7 +36,7 @@ export const App: React.FC = () => {
     isProcessing: false,
     isPaused: false,
     currentFrame: 0,
-    totalFrames: 450,
+    totalFrames: 452,
     currentFps: 0,
     gpuLoadPercent: 0,
     vramUsedMb: 0,
@@ -203,7 +203,7 @@ export const App: React.FC = () => {
     });
   };
 
-  // Start 4K export pipeline
+  // Start 4K export pipeline with selected profile and target resolution
   const handleStartExport = async () => {
     if (!video) return;
     setTelemetry(prev => ({ ...prev, isProcessing: true, isPaused: false }));
@@ -214,6 +214,8 @@ export const App: React.FC = () => {
         body: JSON.stringify({
           inputFile: video.filePath,
           userDir: config.outputDir,
+          qualityProfile: config.qualityProfile,
+          targetResolution: targetResolution,
           totalFrames: telemetry.totalFrames
         })
       });
@@ -229,12 +231,18 @@ export const App: React.FC = () => {
 
   const canExport = video !== null && video.status !== 'REJECTED' && video.status !== 'ALREADY_4K';
 
+  // Compute resolution badges
+  const inResStr = video ? `${video.width}×${video.height}` : '540×960';
+  const outResStr = targetResolution === '2X' && video
+    ? `${video.width * 2}×${video.height * 2}`
+    : (video && video.width < video.height ? '2160×3840' : '3840×2160');
+
   return (
     <div className="w-screen h-screen flex flex-col bg-[#08090C] text-gray-100 font-sans select-none overflow-hidden antialiased">
       <TitleBar />
 
-      <main className="flex-1 flex flex-col p-3.5 space-y-3 max-w-[1400px] w-full mx-auto overflow-hidden">
-        {/* Sleek Workstation Toolbar with Dropdowns */}
+      <main className="flex-1 flex flex-col p-2.5 gap-2 w-full h-[calc(100vh-32px)] max-w-[1500px] mx-auto overflow-hidden">
+        {/* Sleek Workstation Toolbar with Dropdowns (Single Row, Never Wraps) */}
         <Toolbar
           video={video}
           config={config}
@@ -247,16 +255,16 @@ export const App: React.FC = () => {
           isProcessing={telemetry.isProcessing}
         />
 
-        {/* Hero Video Viewport with Dual-Mode (Original Preview vs 4K Wipe Comparison) */}
-        <div className="flex-1 min-h-0 flex flex-col justify-center">
-          <HoverWipePlayer
-            inputVideoPath={video?.filePath}
-            outputVideoPath={outputVideoFile}
-            isProcessing={telemetry.isProcessing}
-          />
-        </div>
+        {/* Hero Video Viewport with Zoom Inspection & A/B Modes (Fills Remaining Screen Height) */}
+        <HoverWipePlayer
+          inputVideoPath={video?.filePath}
+          outputVideoPath={outputVideoFile}
+          inputResolution={inResStr}
+          outputResolution={outResStr}
+          isProcessing={telemetry.isProcessing}
+        />
 
-        {/* Modern Minimalist Hardware & Action Bar */}
+        {/* Modern Minimalist Hardware & Action Bar (Single Row, Never Wraps) */}
         <TelemetryBar
           telemetry={telemetry}
           onStartExport={handleStartExport}

@@ -7,25 +7,30 @@ import {
   IconVolume2, 
   IconVolumeX, 
   IconEye, 
-  IconLayers 
+  IconLayers,
+  IconZoomIn
 } from './Icons';
 
 interface HoverWipePlayerProps {
   inputVideoPath?: string;
   outputVideoPath?: string;
+  inputResolution?: string;
+  outputResolution?: string;
   isProcessing?: boolean;
 }
 
 export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
   inputVideoPath,
   outputVideoPath,
+  inputResolution = '540×960',
+  outputResolution = '2160×3840',
   isProcessing = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoLeftRef = useRef<HTMLVideoElement>(null);
   const videoRightRef = useRef<HTMLVideoElement>(null);
 
-  // Whether we are comparing or just previewing the original video
+  // Mode: whether 4K export exists for comparison
   const isComparisonMode = Boolean(outputVideoPath);
 
   const [wipeRatio, setWipeRatio] = useState(0.5);
@@ -36,25 +41,41 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
 
+  // Zoom & Detail Inspection Mode: 1x (Fit), 2x (Detail), 3x (Micro)
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+
+  // A/B Solo Toggle Mode: 'WIPE' | 'SOLO_4K' | 'SOLO_ORIG'
+  const [viewMode, setViewMode] = useState<'WIPE' | 'SOLO_4K' | 'SOLO_ORIG'>('WIPE');
+
   const leftSrc = inputVideoPath ? `/api/stream_video?path=${encodeURIComponent(inputVideoPath)}` : '';
   const rightSrc = outputVideoPath ? `/api/stream_video?path=${encodeURIComponent(outputVideoPath)}` : '';
 
-  // 144Hz Zero-Lag Instant Wipe Tracking (Strictly NO transition to avoid ghosting)
+  // Synchronize right video with left video whenever rightSrc mounts
+  useEffect(() => {
+    if (isComparisonMode && videoRightRef.current && videoLeftRef.current) {
+      videoRightRef.current.currentTime = videoLeftRef.current.currentTime;
+      if (isPlaying && !videoLeftRef.current.paused) {
+        videoRightRef.current.play().catch(() => {});
+      }
+    }
+  }, [rightSrc, isComparisonMode]);
+
+  // 144Hz Zero-Lag Instant Wipe Tracking
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isComparisonMode || !containerRef.current || isFrozen) return;
+    if (!isComparisonMode || viewMode !== 'WIPE' || !containerRef.current || isFrozen) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const ratio = Math.max(0.0, Math.min(1.0, x / rect.width));
     setWipeRatio(ratio);
     setIsHovering(true);
-  }, [isComparisonMode, isFrozen]);
+  }, [isComparisonMode, viewMode, isFrozen]);
 
   const handlePointerLeave = () => {
     setIsHovering(false);
   };
 
   const handleToggleFreeze = (e: React.MouseEvent) => {
-    if (!isComparisonMode) return;
+    if (!isComparisonMode || viewMode !== 'WIPE') return;
     e.stopPropagation();
     setIsFrozen(prev => !prev);
   };
@@ -63,6 +84,16 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
     if (e) e.stopPropagation();
     setWipeRatio(0.5);
     setIsFrozen(false);
+  };
+
+  const handleCycleZoom = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setZoomLevel(prev => (prev === 1 ? 2 : prev === 2 ? 3 : 1));
+  };
+
+  const handleToggleViewMode = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setViewMode(prev => prev === 'WIPE' ? 'SOLO_4K' : prev === 'SOLO_4K' ? 'SOLO_ORIG' : 'WIPE');
   };
 
   // Synchronized Play/Pause
@@ -113,7 +144,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
     if (videoRightRef.current) videoRightRef.current.currentTime = newTime;
   };
 
-  // Master video time sync
+  // Master video time sync & loop alignment
   const handleTimeUpdate = () => {
     const master = videoLeftRef.current;
     if (!master) return;
@@ -122,13 +153,12 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
     if (master.duration && !isNaN(master.duration) && master.duration !== duration) {
       setDuration(master.duration);
     }
-    // Micro-sync right video if drift exceeds 40ms
-    if (videoRightRef.current && Math.abs(videoRightRef.current.currentTime - t) > 0.04) {
+    // High-precision sync: if right video drifts more than 30ms, nudge it
+    if (videoRightRef.current && Math.abs(videoRightRef.current.currentTime - t) > 0.03) {
       videoRightRef.current.currentTime = t;
     }
   };
 
-  // Ensure right video updates duration if left video is somehow missing duration
   const handleLoadedMetadata = () => {
     if (videoLeftRef.current && videoLeftRef.current.duration) {
       setDuration(videoLeftRef.current.duration);
@@ -137,7 +167,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
 
   const handleExportSnapshot = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const modeDesc = isComparisonMode ? '4K 卷帘对比' : '原视频预览';
+    const modeDesc = isComparisonMode ? (viewMode === 'SOLO_4K' ? '纯净 4K' : viewMode === 'SOLO_ORIG' ? '纯净原片' : '4K 卷帘对比') : '原视频预览';
     alert(`已截取时间点 ${currentTime.toFixed(2)}s 的【${modeDesc}】无损单帧快照！`);
   };
 
@@ -149,23 +179,35 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
     return `${m}:${s}.${ms}`;
   };
 
+  // Calculate video transform style for zoom inspection
+  const zoomStyle: React.CSSProperties = zoomLevel > 1 ? {
+    transform: `scale(${zoomLevel})`,
+    transformOrigin: '50% 30%', // focus on face and upper body
+    transition: 'transform 0.15s ease-out'
+  } : {
+    transform: 'scale(1)',
+    transition: 'transform 0.15s ease-out'
+  };
+
   return (
-    <div className="rounded-2xl bg-[#0E1015]/95 border border-white/[0.08] shadow-2xl backdrop-blur-md flex flex-col p-4 space-y-3 relative select-none">
+    <div className="flex-1 min-h-0 w-full rounded-2xl bg-[#0E1015]/95 border border-white/[0.08] shadow-2xl backdrop-blur-md flex flex-col p-3 space-y-2.5 relative select-none">
       {/* Player Header: Mode Indicator & Quick Actions */}
-      <div className="flex items-center justify-between text-xs px-1">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between text-xs px-1 shrink-0">
+        <div className="flex items-center gap-2">
           {isComparisonMode ? (
-            <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300">
+            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
               </span>
               <span className="font-semibold tracking-wide text-[11px]">4K 神经超分对比模式</span>
               <span className="text-gray-500 text-[10px]">|</span>
-              <span className="text-emerald-400/80 text-[10px] hidden sm:inline">实时卷帘擦除 · 左右滑动鼠标</span>
+              <span className="text-emerald-400/80 text-[10px] hidden sm:inline">
+                {viewMode === 'WIPE' ? '实时卷帘擦除 (左右滑动)' : viewMode === 'SOLO_4K' ? '纯净 4K 全画幅' : '纯净原片全画幅'}
+              </span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">
+            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">
               <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
               <span className="font-semibold tracking-wide text-[11px]">原视频预览模式</span>
               <span className="text-gray-500 text-[10px]">|</span>
@@ -174,27 +216,59 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Top Right Tool Buttons */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {isComparisonMode && (
-            <button
-              type="button"
-              onClick={handleToggleFreeze}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors flex items-center gap-1.5 ${
-                isFrozen 
-                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' 
-                  : 'bg-white/[0.04] text-gray-300 hover:text-white border-white/[0.08] hover:bg-white/[0.08]'
-              }`}
-            >
-              {isFrozen ? <IconPause className="w-3 h-3" /> : <IconLayers className="w-3 h-3" />}
-              <span>{isFrozen ? '已定格 (滚轮穿梭)' : '单击定格'}</span>
-            </button>
+            <>
+              {/* A/B Mode Toggle */}
+              <button
+                type="button"
+                onClick={handleToggleViewMode}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/[0.04] hover:bg-white/[0.08] text-gray-200 border border-white/[0.08] transition-colors active:scale-95 flex items-center gap-1"
+                title="切换显示模式：左右卷帘 / 纯净4K / 纯净原片"
+              >
+                <IconLayers className="w-3 h-3 text-emerald-400" />
+                <span>{viewMode === 'WIPE' ? '卷帘对比' : viewMode === 'SOLO_4K' ? '查看 4K' : '查看原片'}</span>
+              </button>
+
+              {/* 100% / 200% Zoom Detail Loupe */}
+              <button
+                type="button"
+                onClick={handleCycleZoom}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors active:scale-95 flex items-center gap-1 ${
+                  zoomLevel > 1 
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm' 
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-gray-200 border-white/[0.08]'
+                }`}
+                title="局部细节放大检视 (放大至面部/发丝微观像素)"
+              >
+                <IconZoomIn className="w-3 h-3 text-cyan-400" />
+                <span>{zoomLevel === 1 ? '100% 全画幅' : `${zoomLevel * 100}% 局部特写`}</span>
+              </button>
+
+              {/* Freeze Toggle */}
+              {viewMode === 'WIPE' && (
+                <button
+                  type="button"
+                  onClick={handleToggleFreeze}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors flex items-center gap-1 ${
+                    isFrozen 
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' 
+                      : 'bg-white/[0.04] text-gray-300 hover:text-white border-white/[0.08] hover:bg-white/[0.08]'
+                  }`}
+                >
+                  {isFrozen ? <IconPause className="w-3 h-3" /> : <IconPlay className="w-3 h-3" />}
+                  <span>{isFrozen ? '已定格' : '单击定格'}</span>
+                </button>
+              )}
+            </>
           )}
 
           <button
             type="button"
             onClick={handleExportSnapshot}
-            className="px-2.5 py-1 rounded-lg text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/[0.08] transition-colors flex items-center gap-1.5 active:scale-95"
-            title="截取当前帧画面"
+            className="px-2 py-1 rounded-lg text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/[0.08] transition-colors flex items-center gap-1 active:scale-95"
+            title="截取当前画面无损快照"
           >
             <IconCamera className="w-3 h-3 text-cyan-400" />
             <span>快照</span>
@@ -202,7 +276,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
         </div>
       </div>
 
-      {/* Main Video Viewport */}
+      {/* Main Video Viewport - Expands naturally in vertical height */}
       <div
         ref={containerRef}
         onPointerMove={handlePointerMove}
@@ -210,8 +284,8 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
         onClick={handleToggleFreeze}
         onDoubleClick={() => handleResetCenter()}
         onWheel={handleWheel}
-        className={`relative w-full h-[460px] rounded-xl overflow-hidden bg-black flex items-center justify-center border border-white/[0.08] shadow-inner ${
-          isComparisonMode ? 'cursor-col-resize' : 'cursor-default'
+        className={`relative flex-1 min-h-[380px] w-full rounded-xl overflow-hidden bg-black flex items-center justify-center border border-white/[0.08] shadow-inner ${
+          isComparisonMode && viewMode === 'WIPE' ? 'cursor-col-resize' : 'cursor-default'
         }`}
       >
         {!leftSrc ? (
@@ -221,70 +295,82 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
           </div>
         ) : isComparisonMode ? (
           <>
-            {/* Layer 1: 4K Super-Resolution Output Video (Full Base Canvas) */}
-            <video
-              ref={videoRightRef}
-              src={rightSrc}
-              autoPlay
-              loop
-              muted={isMuted}
-              playsInline
-              className="w-full h-full object-contain pointer-events-none"
-            />
-
-            {/* Layer 2: Original Video (Left Clipped Layer, Zero-Lag 144Hz Instant Tracking) */}
-            <div
-              className="absolute inset-0 overflow-hidden flex items-center justify-center pointer-events-none"
-              style={{
-                clipPath: `polygon(0 0, ${wipeRatio * 100}% 0, ${wipeRatio * 100}% 100%, 0 100%)`,
-                willChange: 'clip-path'
-              }}
-            >
-              <video
-                ref={videoLeftRef}
-                src={leftSrc}
-                autoPlay
-                loop
-                muted={isMuted}
-                playsInline
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                className="w-full h-full object-contain pointer-events-none"
-              />
-            </div>
-
-            {/* Zero-Lag Laser Wipe Divider (NO CSS transition = Zero Ghosting / 零拖影) */}
-            <div
-              className="absolute top-0 bottom-0 pointer-events-none"
-              style={{
-                left: `${wipeRatio * 100}%`,
-                transform: 'translateX(-50%)',
-                willChange: 'left'
-              }}
-            >
-              {/* Vertical line with subtle glow */}
-              <div className={`w-[2px] h-full ${
-                isHovering || isFrozen
-                  ? 'bg-emerald-400 shadow-[0_0_12px_#10B981,0_0_24px_#10B981]'
-                  : 'bg-white/70 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
-              }`} />
-
-              {/* Floating Divider Badge with Percentage */}
-              <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-[#0B0D12]/95 border border-emerald-400 text-emerald-300 text-[10px] font-mono tracking-tighter shadow-2xl">
-                {(wipeRatio * 100).toFixed(0)}%
+            {/* Layer 1: 4K Super-Resolution Output Video (Full Canvas) */}
+            {(viewMode === 'WIPE' || viewMode === 'SOLO_4K') && (
+              <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                <video
+                  ref={videoRightRef}
+                  src={rightSrc}
+                  autoPlay
+                  loop
+                  muted={isMuted}
+                  playsInline
+                  style={zoomStyle}
+                  className="w-full h-full object-contain pointer-events-none"
+                />
               </div>
-            </div>
+            )}
 
-            {/* Viewport Corner Badges */}
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black/75 border border-white/10 text-gray-300 text-[11px] font-semibold backdrop-blur-md pointer-events-none">
-              原片
+            {/* Layer 2: Original Video (Left Clipped Layer in WIPE mode, or Full in SOLO_ORIG) */}
+            {(viewMode === 'WIPE' || viewMode === 'SOLO_ORIG') && (
+              <div
+                className="absolute inset-0 overflow-hidden flex items-center justify-center pointer-events-none"
+                style={{
+                  clipPath: viewMode === 'WIPE' 
+                    ? `polygon(0 0, ${wipeRatio * 100}% 0, ${wipeRatio * 100}% 100%, 0 100%)`
+                    : 'none',
+                  willChange: 'clip-path'
+                }}
+              >
+                <video
+                  ref={videoLeftRef}
+                  src={leftSrc}
+                  autoPlay
+                  loop
+                  muted={isMuted}
+                  playsInline
+                  onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={handleLoadedMetadata}
+                  style={zoomStyle}
+                  className="w-full h-full object-contain pointer-events-none"
+                />
+              </div>
+            )}
+
+            {/* Zero-Lag Laser Wipe Divider (Only active in WIPE mode) */}
+            {viewMode === 'WIPE' && (
+              <div
+                className="absolute top-0 bottom-0 pointer-events-none"
+                style={{
+                  left: `${wipeRatio * 100}%`,
+                  transform: 'translateX(-50%)',
+                  willChange: 'left'
+                }}
+              >
+                {/* Vertical laser line */}
+                <div className={`w-[2px] h-full ${
+                  isHovering || isFrozen
+                    ? 'bg-emerald-400 shadow-[0_0_12px_#10B981,0_0_24px_#10B981]'
+                    : 'bg-white/75 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
+                }`} />
+
+                {/* Floating Percentage Pill */}
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-[#0B0D12]/95 border border-emerald-400 text-emerald-300 text-[10px] font-mono tracking-tighter shadow-2xl">
+                  {(wipeRatio * 100).toFixed(0)}%
+                </div>
+              </div>
+            )}
+
+            {/* Viewport Corner Badges with Concrete Resolutions */}
+            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black/80 border border-white/10 text-gray-300 text-[11px] font-mono font-semibold backdrop-blur-md pointer-events-none shadow-md">
+              &#9664; 原片 ({inputResolution})
             </div>
-            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold backdrop-blur-md pointer-events-none">
-              4K DLSS 5 超分
+            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-emerald-950/85 border border-emerald-500/50 text-emerald-300 text-[11px] font-mono font-semibold backdrop-blur-md pointer-events-none shadow-md">
+              4K DLSS 5 超分 ({outputResolution}) &#9654;
             </div>
           </>
         ) : (
-          /* Mode A: Single Original Video Preview (No fake filters, no false split line) */
+          /* Mode A: Single Original Video Preview */
           <video
             ref={videoLeftRef}
             src={leftSrc}
@@ -294,20 +380,21 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
             playsInline
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
+            style={zoomStyle}
             className="w-full h-full object-contain pointer-events-none"
           />
         )}
       </div>
 
-      {/* Video Playback & Timeline Controls */}
-      <div className="flex items-center justify-between px-1 text-xs text-gray-300 gap-3">
+      {/* Video Transport & Timeline Controls - Exactly 1 compact row */}
+      <div className="flex flex-nowrap items-center justify-between px-1 text-xs text-gray-300 gap-3 shrink-0">
         {/* Play/Pause & Step Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={handleTogglePlay}
             disabled={!leftSrc}
-            className="p-2 rounded-lg bg-white/[0.08] hover:bg-emerald-500/20 text-white hover:text-emerald-400 border border-white/10 transition-colors disabled:opacity-40"
+            className="p-1.5 rounded-lg bg-white/[0.08] hover:bg-emerald-500/20 text-white hover:text-emerald-400 border border-white/10 transition-colors disabled:opacity-40"
             title={isPlaying ? '暂停' : '播放'}
           >
             {isPlaying ? <IconPause className="w-3.5 h-3.5" /> : <IconPlay className="w-3.5 h-3.5" />}
@@ -334,13 +421,13 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
           </button>
 
           {/* Timecode */}
-          <span className="font-mono text-gray-300 text-[11px] px-1">
+          <span className="font-mono text-gray-300 text-[11px] px-1 whitespace-nowrap">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
         </div>
 
         {/* Timeline Slider */}
-        <div className="flex-1 mx-2 flex items-center">
+        <div className="flex-1 mx-2 flex items-center min-w-[120px]">
           <input
             type="range"
             min="0"
@@ -354,12 +441,12 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
         </div>
 
         {/* Right Aux Controls */}
-        <div className="flex items-center gap-2 text-[11px]">
-          {isComparisonMode && (
+        <div className="flex items-center gap-2 text-[11px] shrink-0">
+          {isComparisonMode && viewMode === 'WIPE' && (
             <button
               type="button"
               onClick={() => handleResetCenter()}
-              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/[0.06] transition-colors flex items-center gap-1"
+              className="px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/[0.06] transition-colors flex items-center gap-1 whitespace-nowrap"
               title="将卷帘线复位至中央 50%"
             >
               <IconRotateCcw className="w-3 h-3 text-gray-400" />
@@ -371,7 +458,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
             type="button"
             onClick={() => setIsMuted(!isMuted)}
             disabled={!leftSrc}
-            className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 hover:text-gray-200 border border-white/[0.06] transition-colors disabled:opacity-40"
+            className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 hover:text-gray-200 border border-white/[0.06] transition-colors disabled:opacity-40 shrink-0"
             title={isMuted ? '取消静音' : '静音'}
           >
             {isMuted ? <IconVolumeX className="w-3.5 h-3.5" /> : <IconVolume2 className="w-3.5 h-3.5" />}
