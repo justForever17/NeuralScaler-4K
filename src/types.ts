@@ -1,5 +1,5 @@
 // Types for NeuralScaler-DLSS5 Desktop App
-export type VideoStatus = 'IDLE' | 'VALIDATING' | 'RECOMMENDED' | 'WARNING_480P' | 'REJECTED' | 'ALREADY_4K';
+export type VideoStatus = 'IDLE' | 'VALIDATING' | 'RECOMMENDED' | 'WARNING_480P' | 'WARNING_LOW_RES' | 'REJECTED' | 'ALREADY_4K';
 
 export interface VideoMetadata {
   filePath: string;

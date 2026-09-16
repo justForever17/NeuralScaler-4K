@@ -79,31 +79,32 @@ def probe_file(file_path):
         if total_frames <= 0:
             total_frames = int(dur * fps)
             
-        if w < 640 or h < 480:
+        min_dim = min(w, h)
+        if min_dim < 320:
             return {
                 "status": "REJECTED",
                 "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
-                "reason": f"源分辨率 ({w}x{h}) 低于 480P 下限，已被安全拦截拒绝。"
+                "reason": f"源分辨率 ({w}x{h}) 极低（短边小于 320），无法有效提取神经特征点。"
             }
-        elif w == 640 or h == 480:
+        elif min_dim < 480:
             return {
-                "status": "WARNING_480P",
+                "status": "WARNING_LOW_RES",
                 "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
                 "total_frames": total_frames,
-                "reason": "当前视频为 480P，神经重绘可能带来微观面部/轮廓轻微变形风险。建议优先使用 720P+ 素材。"
+                "reason": f"源分辨率 ({w}x{h}) 处于低清范围，将启用深度时序插值增强。"
             }
         elif (w >= 3840 and h >= 2160) or (w >= 2160 and h >= 3840):
             return {
                 "status": "ALREADY_4K",
                 "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
-                "reason": f"当前视频已达到 4K ({w}x{h})，无需重复执行超分。"
+                "reason": f"当前视频已达 4K ({w}x{h})，无需重复执行超分。"
             }
         else:
             return {
                 "status": "RECOMMENDED",
                 "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
                 "total_frames": total_frames,
-                "reason": f"黄金推荐分辨率 ({w}x{h})，已激活 DLSS 5 神经材质重塑与 4K 硬件时序拉升。"
+                "reason": f"推荐输入画质 ({w}x{h})，支持 4K 神经重绘与硬件超分加速。"
             }
     except Exception as e:
         return {"status": "REJECTED", "reason": f"容器解析失败: {str(e)}"}
@@ -346,6 +347,38 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.send_json({"status": "OK"})
             else:
                 self.send_json({"status": "ERROR", "msg": "目录不存在"})
+
+        elif clean_path == "/api/check_exported_file":
+            input_file = req.get("inputFile", "")
+            user_dir = req.get("userDir", "")
+            if not input_file or not os.path.exists(input_file):
+                self.send_json({"exists": False, "outputPath": ""})
+            else:
+                base_dir, _ = resolve_fallback_path(input_file, user_dir)
+                base_name = os.path.splitext(os.path.basename(input_file))[0]
+                target_file = os.path.join(base_dir, f"{base_name}_4K_DLSS5.mp4")
+                matched_files = []
+                if os.path.isfile(target_file) and os.path.getsize(target_file) >= 1024:
+                    matched_files.append(target_file)
+                counter = 1
+                while True:
+                    c_file = os.path.join(base_dir, f"{base_name}_4K_DLSS5 ({counter}).mp4")
+                    if os.path.isfile(c_file) and os.path.getsize(c_file) >= 1024:
+                        matched_files.append(c_file)
+                        counter += 1
+                    else:
+                        break
+                
+                if matched_files:
+                    latest_file = max(matched_files, key=lambda f: os.path.getmtime(f))
+                    self.send_json({
+                        "exists": True,
+                        "outputPath": latest_file,
+                        "fileName": os.path.basename(latest_file),
+                        "sizeBytes": os.path.getsize(latest_file)
+                    })
+                else:
+                    self.send_json({"exists": False, "outputPath": ""})
 
         elif clean_path == "/api/start_export":
             input_file = req.get("inputFile", "")
