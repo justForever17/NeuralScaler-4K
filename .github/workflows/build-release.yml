@@ -60,7 +60,12 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" scripts/installer.iss
 
-      - name: Run Test Suite
+      - name: Run Installer Lifecycle & Zero-Residue Acceptance Test
+        shell: pwsh
+        run: |
+          pwsh tests/e2e/test_installer_lifecycle.ps1 -SetupExe release/NeuralScaler-4K-Setup-v2.2.0.exe
+
+      - name: Run Python Test Suite
         run: python -m unittest discover -s tests -t . -p "test_*.py"
 
       - name: Create Release Archive
