@@ -66,6 +66,10 @@ def assemble_bundle():
     if os.path.exists(src_ico):
         shutil.copy2(src_ico, os.path.join(RELEASE_DIR, "app.ico"))
 
+    src_png = os.path.join(PROJECT_ROOT, "public", "app.png")
+    if os.path.exists(src_png):
+        shutil.copy2(src_png, os.path.join(RELEASE_DIR, "app.png"))
+
     for doc_name in ["LICENSE", "README.md"]:
         doc_src = os.path.join(PROJECT_ROOT, doc_name)
         if os.path.exists(doc_src):
@@ -99,7 +103,7 @@ echo [Info] 请保持本控制台运行，关闭本窗口将终止超分任务�
 echo ========================================================
 echo.
 
-"%PY_EXE%" server.py
+"%PY_EXE%" server.py %*
 
 echo.
 echo [Info] 核心服务已退出。按任意键关闭窗口...

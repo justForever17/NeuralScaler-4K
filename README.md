@@ -40,11 +40,16 @@ NeuralScaler 4K 是基于 NVIDIA DLSS 5（深度学习超分辨率 5 代）神�
 
 ### 快速上手
 
-#### 方式 A：便携绿色包运行（免安装）
-1. 从 Releases 页面下载 `NeuralScaler-4K-Portable-v*.zip` 并解压。
-2. 双击解压目录中的 `NeuralScaler.bat` 即可自动启动引擎并唤起工作站。
+#### 方式 A：单文件安装向导（推荐）
+1. 从 Releases 页面下载 `NeuralScaler-4K-Setup-v2.2.0.exe`。
+2. 双击运行安装程序，按提示完成向导式安装。
+3. 自动生成桌面高清图标快捷方式，并自动集成 Windows 资源管理器右键快捷菜单（支持在任意 `.mp4` / `.mov` / `.mkv` 视频上右键直接调用超分）。
 
-#### 方式 B：源码构建与本地运行
+#### 方式 B：便携绿色版运行（免安装）
+1. 从 Releases 页面下载 `NeuralScaler-4K-Portable-windows-x64.zip` 并解压。
+2. 双击解压目录中的 `NeuralScaler.bat` 即可直接启动引擎并唤起独立工作站视窗。
+
+#### 方式 C：源码构建与本地运行
 ```powershell
 # 1. 克隆代码仓库
 git clone https://github.com/justForever17/NeuralScaler-4K.git
