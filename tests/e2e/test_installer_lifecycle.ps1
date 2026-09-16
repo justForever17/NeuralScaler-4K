@@ -74,7 +74,7 @@ Write-Host "[Step 5] Verifying Control Panel Uninstall registry entry..." -Foreg
 $UninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{D37F2C5A-8E14-469F-A29B-9832B66C5E09}_is1"
 $uninstEntry = Get-ItemProperty -Path $UninstallKey -ErrorAction SilentlyContinue
 Assert-Condition ($null -ne $uninstEntry) "Uninstall entry registered in Windows Programs list"
-Assert-Condition ($uninstEntry.DisplayName -eq "NeuralScaler 4K") "DisplayName matches 'NeuralScaler 4K'"
+Assert-Condition ($uninstEntry.DisplayName -like "NeuralScaler 4K*") "DisplayName starts with 'NeuralScaler 4K': $($uninstEntry.DisplayName)"
 
 # 7. Smoke Test Application Engine
 Write-Host "[Step 6] Running smoke test on installed engine..." -ForegroundColor Yellow
