@@ -301,7 +301,7 @@ export const App: React.FC = () => {
     : (video && video.width < video.height ? '2160×3840' : '3840×2160');
 
   return (
-    <div className="w-screen h-screen flex flex-col dark:bg-[#08090C] bg-[#F5F6F9] dark:text-gray-100 text-gray-900 font-sans select-none overflow-hidden antialiased transition-colors duration-200">
+    <div className="w-screen h-screen flex flex-col bg-[#F3F4F6] text-gray-900 dark:bg-[#08090C] dark:text-gray-100 font-sans select-none overflow-hidden antialiased transition-colors duration-200">
       <TitleBar
         gpus={gpus}
         selectedGpuId={selectedGpuId}

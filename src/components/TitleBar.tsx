@@ -27,7 +27,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const activeGpu = gpus.find(g => g.id === selectedGpuId) || gpus[0];
 
   return (
-    <header className="flex flex-nowrap items-center justify-between px-3.5 h-10 select-none bg-[#0D0E14]/95 dark:bg-[#0D0E14]/95 bg-white/95 border-b border-white/[0.08] dark:border-white/[0.08] border-black/[0.08] backdrop-blur-xl text-gray-300 dark:text-gray-300 text-gray-700 text-xs z-50 shrink-0 overflow-hidden">
+    <header className="flex flex-nowrap items-center justify-between px-3.5 h-10 select-none bg-white/95 dark:bg-[#0D0E14]/95 border-b border-black/[0.08] dark:border-white/[0.08] backdrop-blur-xl text-gray-700 dark:text-gray-300 text-xs z-50 shrink-0 overflow-hidden shadow-sm">
       {/* Brand & Logo */}
       <div className="flex items-center gap-2.5 shrink-0">
         <IconAppLogo className="w-5 h-5 shadow-sm shrink-0" />

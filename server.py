@@ -5,10 +5,44 @@ import json
 import subprocess
 import threading
 import time
+import urllib.request
 from urllib.parse import parse_qs, unquote
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
+
+# 确保在 pythonw.exe 无终端模式下输出流安全，防止 NoneType 导致 HTTP 服务崩溃
+class SafeLogWriter:
+    def __init__(self, log_path=None):
+        self.file = None
+        if log_path:
+            try:
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                self.file = open(log_path, "a", encoding="utf-8", buffering=1)
+            except Exception:
+                self.file = None
+
+    def write(self, s):
+        if self.file:
+            try:
+                self.file.write(s)
+            except Exception:
+                pass
+
+    def flush(self):
+        if self.file:
+            try:
+                self.file.flush()
+            except Exception:
+                pass
+
+if sys.stdout is None or not hasattr(sys.stdout, "write"):
+    log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "NeuralScaler", "logs")
+    sys.stdout = SafeLogWriter(os.path.join(log_dir, "server.log"))
+
+if sys.stderr is None or not hasattr(sys.stderr, "write"):
+    log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "NeuralScaler", "logs")
+    sys.stderr = SafeLogWriter(os.path.join(log_dir, "server_err.log"))
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist")
@@ -16,6 +50,7 @@ LOCAL_BIN = os.path.join(PROJECT_ROOT, "bin")
 if os.path.isdir(LOCAL_BIN):
     os.environ["PATH"] = LOCAL_BIN + os.pathsep + os.environ.get("PATH", "")
 PORT = 1420
+NO_WINDOW_FLAGS = 0x08000000 if sys.platform == "win32" else 0
 
 export_state = {
     "is_processing": False,
@@ -35,7 +70,7 @@ def get_gpu_telemetry():
     """实时采集物理 GPU 核心利用率与专用显存开销"""
     try:
         cmd = ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"]
-        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, creationflags=NO_WINDOW_FLAGS).strip()
         parts = [int(x.strip()) for x in out.split(",")]
         return {
             "gpu_load": parts[0],
@@ -59,7 +94,7 @@ def probe_file(file_path):
         file_path
     ]
     try:
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True, creationflags=NO_WINDOW_FLAGS)
         data = json.loads(res.stdout)
         if not data.get("streams"):
             return {"status": "REJECTED", "reason": "未检测到有效视频流"}
@@ -199,7 +234,8 @@ def run_export_pipeline(input_file, output_file, total_frames, quality_profile="
             stderr=subprocess.STDOUT,
             text=True,
             encoding="utf-8",
-            errors="replace"
+            errors="replace",
+            creationflags=NO_WINDOW_FLAGS
         )
         
         for line in proc.stdout:
@@ -303,6 +339,18 @@ def serve_video_stream(handler, file_path):
 class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIST_DIR, **kwargs)
+
+    def log_message(self, format, *args):
+        # 覆写日志输出，防止 pythonw.exe 模式下 stderr 异常导致 HTTP 请求断连
+        try:
+            if sys.stderr and hasattr(sys.stderr, "write"):
+                sys.stderr.write("%s - - [%s] %s\n" %
+                                 (self.address_string(),
+                                  self.log_date_time_string(),
+                                  format % args))
+                sys.stderr.flush()
+        except Exception:
+            pass
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -457,13 +505,19 @@ class AppHandler(SimpleHTTPRequestHandler):
 class ReusableThreadingServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
+_cached_system_info = None
+
 def get_system_info():
     """实时检测宿主机操作系统、CPU 及物理 GPU 硬件列表（智能过滤虚拟投屏驱动）"""
+    global _cached_system_info
+    if _cached_system_info is not None:
+        return _cached_system_info
+
     gpus = []
     # 1. 优先获取 NVIDIA 独显详细信息
     try:
         cmd = ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"]
-        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, creationflags=NO_WINDOW_FLAGS).strip()
         for line in out.splitlines():
             parts = [p.strip() for p in line.split(",")]
             if len(parts) >= 3:
@@ -482,7 +536,7 @@ def get_system_info():
     # 2. 补充其他显示芯片（如 Intel/AMD 核显）
     try:
         ps_cmd = 'Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM | ConvertTo-Json'
-        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, creationflags=NO_WINDOW_FLAGS)
         data = json.loads(res.stdout)
         if isinstance(data, dict):
             data = [data]
@@ -517,14 +571,37 @@ def get_system_info():
             "tag": "NVIDIA GeForce RTX 4070 Laptop GPU (8GB · 推荐)"
         })
 
-    return {
+    _cached_system_info = {
         "os": "Windows 11 x64",
         "gpus": gpus,
         "selected_gpu": gpus[0]["id"]
     }
+    return _cached_system_info
+
+def wait_for_server(port, timeout=10.0):
+    """主动轮询探测本地 HTTP 服务是否已就绪，确保 100% 避免空响应或连线失败"""
+    start_t = time.time()
+    while time.time() - start_t < timeout:
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/export_status")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.15)
+    return False
 
 def open_browser():
-    time.sleep(0.8)
+    # 轮询探测直到服务已完全开始监听
+    ready = wait_for_server(PORT, timeout=10.0)
+    if not ready:
+        try:
+            if sys.stderr and hasattr(sys.stderr, "write"):
+                sys.stderr.write(f"[Error] 服务启动超时，未能成功建立监听: http://127.0.0.1:{PORT}\n")
+        except Exception:
+            pass
+        return
+
     edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
     if not os.path.exists(edge_path):
         edge_path = r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
@@ -558,23 +635,27 @@ def open_browser():
         print(f"[Warn] 自动唤起纯净视窗失败: {e}，请手动访问: {url}")
 
 def main():
-    print(f"=======================================================")
-    print(f"  NeuralScaler-DLSS5 Desktop Engine Backend v2.2")
-    print(f"  Local Web Service running on: http://127.0.0.1:{PORT}")
-    print(f"=======================================================")
-    
-    # 异步唤起 Win11 桌面应用视窗
+    # 启动健康检查与视窗唤起线程
     t = threading.Thread(target=open_browser, daemon=True)
     t.start()
     
     try:
         server = ReusableThreadingServer(("127.0.0.1", PORT), AppHandler)
+        print(f"=======================================================")
+        print(f"  NeuralScaler-DLSS5 Desktop Engine Backend v2.2")
+        print(f"  Local Web Service running on: http://127.0.0.1:{PORT}")
+        print(f"=======================================================")
         print(f"[NeuralScaler] 核心引擎与本地 Web 服务已就绪，正在持续监听...")
         server.serve_forever()
     except OSError as e:
         if "10048" in str(e):
-            print(f"\n[错误] 端口 {PORT} 已被占用！")
-            print(f"可能已有旧的 NeuralScaler 实例正在运行，请在任务管理器中结束 python.exe 后重试。")
+            # 如果端口已被占用，检查是否已有正在运行的本程序服务
+            if wait_for_server(PORT, timeout=1.5):
+                open_browser()
+                sys.exit(0)
+            else:
+                print(f"\n[错误] 端口 {PORT} 已被占用！")
+                print(f"可能已有旧的 NeuralScaler 实例正在运行，请在任务管理器中结束 python.exe 后重试。")
         else:
             print(f"\n[错误] 网络服务启动失败: {e}")
         sys.exit(1)

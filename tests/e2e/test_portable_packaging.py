@@ -12,11 +12,10 @@ class TestPortablePackaging(unittest.TestCase):
         self.assertTrue(os.path.isdir(RELEASE_DIR), "Release folder does not exist")
         
         expected_files = [
-            "NeuralScaler.vbs",
             "NeuralScaler.bat",
-            "NeuralScaler-Debug.bat",
             "README.txt",
             "server.py",
+            "app.ico",
             os.path.join("dist", "index.html"),
             os.path.join("bin", "ffmpeg.exe"),
             os.path.join("bin", "ffprobe.exe"),
@@ -76,6 +75,12 @@ class TestPortablePackaging(unittest.TestCase):
             content = f.read()
             self.assertIn("LOCAL_BIN = os.path.join(PROJECT_ROOT, \"bin\")", content)
             self.assertIn("os.environ[\"PATH\"] = LOCAL_BIN", content)
+
+    def test_06_tailwind_dark_mode_enabled(self):
+        tailwind_config = os.path.join(PROJECT_ROOT, "tailwind.config.cjs")
+        with open(tailwind_config, "r", encoding="utf-8") as f:
+            content = f.read()
+            self.assertIn("darkMode: 'class'", content)
 
 if __name__ == "__main__":
     unittest.main()
