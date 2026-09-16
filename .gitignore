@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Rust build target
+src-tauri/target/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.class
+.pytest_cache/
+
+# Vite / Frontend build artifacts
+dist/
+
+# Temp files
+*.tmp
+test_tailwind.css
+tests/fixtures/output_4k/
