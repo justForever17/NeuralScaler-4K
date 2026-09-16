@@ -9,23 +9,27 @@ import { VideoMetadata, AppConfig, TelemetryState } from './types';
 
 export const App: React.FC = () => {
   const [video, setVideo] = useState<VideoMetadata | null>({
-    filePath: 'E:\\comfyui\\dlss5-super-resolution\\tests\\fixtures\\synth_1080p_interview.mp4',
-    fileName: 'synth_1080p_interview.mp4',
-    width: 1920,
-    height: 1080,
-    durationSeconds: 2.0,
+    filePath: 'C:\\Users\\sunny\\Desktop\\1\\素材\\微信视频2026-07-23_010220_787.mp4',
+    fileName: '微信视频2026-07-23_010220_787.mp4',
+    width: 1080,
+    height: 1920,
+    durationSeconds: 15.0,
     fps: 30,
-    codec: 'H.264',
-    fileSizeBytes: 301 * 1024,
+    codec: 'h264',
+    fileSizeBytes: 8729217,
     status: 'RECOMMENDED',
-    statusMessage: '黄金推荐分辨率 (1080P)，已激活 DLSS 5 神经材质重构与 4K 硬件时序拉升。',
+    statusMessage: '黄金推荐分辨率 (1080x1920)，已激活 DLSS 5 神经材质重塑与 4K 硬件时序拉升。',
     isConfirmed480pRisk: false
   });
+
+  const [outputVideoFile, setOutputVideoFile] = useState<string>(
+    'C:\\Users\\sunny\\Desktop\\1\\素材\\output_4k\\微信视频2026-07-23_010220_787_4K_DLSS5.mp4'
+  );
 
   const [config, setConfig] = useState<AppConfig>({
     qualityProfile: 'FAITHFUL',
     outputDir: '',
-    fallbackDir: 'E:\\comfyui\\dlss5-super-resolution\\tests\\fixtures\\output_4k\\',
+    fallbackDir: 'C:\\Users\\sunny\\Desktop\\1\\素材\\output_4k\\',
     namingTemplate: '{filename}_4K_DLSS5.mp4',
     enableFaststart: true,
     colorStandard: 'BT.709',
@@ -35,15 +39,33 @@ export const App: React.FC = () => {
   const [telemetry, setTelemetry] = useState<TelemetryState>({
     isProcessing: false,
     isPaused: false,
-    currentFrame: 0,
-    totalFrames: 60,
-    currentFps: 0,
-    gpuLoadPercent: 78,
-    vramUsedMb: 2840,
+    currentFrame: 450,
+    totalFrames: 450,
+    currentFps: 44.8,
+    gpuLoadPercent: 28,
+    vramUsedMb: 2048,
     vramTotalMb: 6144,
     etaSeconds: 0,
     circuitBreakerStatus: 'OPERATIONAL'
   });
+
+  // Check initial video probe & path
+  useEffect(() => {
+    if (video?.filePath) {
+      fetch('/api/resolve_path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputFile: video.filePath, userDir: config.outputDir })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.resolvedDir) {
+          setConfig(prev => ({ ...prev, fallbackDir: data.resolvedDir + '\\' }));
+        }
+      })
+      .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     let timer: number;
@@ -67,8 +89,13 @@ export const App: React.FC = () => {
               ...prev,
               isProcessing: false,
               currentFrame: data.total_frames,
-              currentFps: data.current_fps
+              currentFps: data.current_fps,
+              gpuLoadPercent: data.gpu_load,
+              vramUsedMb: data.vram_used_mb
             }));
+            if (data.output_file) {
+              setOutputVideoFile(data.output_file);
+            }
             alert(`🎉 4K 神经超分成功导出完成！\n文件保存至:\n${data.output_file}`);
           } else if (data.status === 'ERROR') {
             setTelemetry(prev => ({ ...prev, isProcessing: false }));
@@ -101,6 +128,8 @@ export const App: React.FC = () => {
           isConfirmed480pRisk: false
         };
         setVideo(newVideo);
+        setOutputVideoFile('');
+        
         const dirRes = await fetch('/api/resolve_path', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -108,7 +137,7 @@ export const App: React.FC = () => {
         });
         const dirData = await dirRes.json();
         setConfig(prev => ({ ...prev, fallbackDir: dirData.resolvedDir + '\\' }));
-        setTelemetry(prev => ({ ...prev, totalFrames: data.total_frames || 60 }));
+        setTelemetry(prev => ({ ...prev, totalFrames: data.total_frames || 60, currentFrame: 0 }));
       }
     } catch (err) {
       console.error(err);
@@ -166,7 +195,7 @@ export const App: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <VideoInputSection
             video={video}
-            onVideoSelect={(v) => setVideo(v)}
+            onVideoSelect={(v) => { setVideo(v); setOutputVideoFile(''); }}
             onConfirm480pRisk={() => video && setVideo({ ...video, isConfirmed480pRisk: !video.isConfirmed480pRisk })}
             onCallNativePicker={handleNativeSelectFile}
           />
@@ -183,7 +212,11 @@ export const App: React.FC = () => {
           onOpenExplorer={handleOpenExplorer}
         />
 
-        <HoverWipePlayer />
+        <HoverWipePlayer
+          inputVideoPath={video?.filePath}
+          outputVideoPath={outputVideoFile}
+          isProcessing={telemetry.isProcessing}
+        />
 
         <TelemetryBar
           telemetry={telemetry}

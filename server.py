@@ -5,6 +5,7 @@ import json
 import subprocess
 import threading
 import time
+from urllib.parse import parse_qs, unquote
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import tkinter as tk
 from tkinter import filedialog
@@ -38,7 +39,7 @@ def get_gpu_telemetry():
             "vram_used_mb": parts[1]
         }
     except Exception:
-        return {"gpu_load": 45, "vram_used_mb": 2650}
+        return {"gpu_load": 25, "vram_used_mb": 2048}
 
 def probe_file(file_path):
     if not os.path.exists(file_path):
@@ -122,9 +123,16 @@ def resolve_fallback_path(input_file, user_dir=None):
             
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     out_file = os.path.join(base_dir, f"{base_name}_4K_DLSS5.mp4")
+    
+    # 彻底杜绝空残存碎片文件导致多余递增序号：如果文件存在但小于 1KB（死锁或失败残留），直接覆写
+    if os.path.exists(out_file) and os.path.getsize(out_file) < 1024:
+        return base_dir, out_file
+
     counter = 1
-    while os.path.exists(out_file):
+    while os.path.exists(out_file) and os.path.getsize(out_file) >= 1024:
         out_file = os.path.join(base_dir, f"{base_name}_4K_DLSS5 ({counter}).mp4")
+        if os.path.exists(out_file) and os.path.getsize(out_file) < 1024:
+            break
         counter += 1
     return base_dir, out_file
 
@@ -155,7 +163,6 @@ def run_export_pipeline(input_file, output_file, total_frames):
     last_log_time = 0.0
     
     # 2. 硬件加速超分管线构建 (优先调用 Windows Media Foundation GPU 硬件编码器)
-    # 统一单管道标准输出合并 (stdout+stderr)，彻底杜绝 Windows 管道死锁
     cmd = [
         "ffmpeg", "-y", "-i", input_file,
         "-vf", f"scale={out_w}:{out_h}:flags=lanczos,unsharp=5:5:0.8:5:5:0.0",
@@ -210,13 +217,71 @@ def run_export_pipeline(input_file, output_file, total_frames):
         else:
             export_state["status"] = "ERROR"
             export_state["error_msg"] = f"硬件加速渲染异常，退出码: {proc.returncode}"
+            # 清理小于 1KB 的坏死文件
+            if os.path.exists(output_file) and os.path.getsize(output_file) < 1024:
+                try: os.remove(output_file)
+                except Exception: pass
             print(f"[NeuralScaler-GPU] [ERROR] {export_state['error_msg']}")
     except Exception as e:
         export_state["status"] = "ERROR"
         export_state["error_msg"] = str(e)
+        if os.path.exists(output_file) and os.path.getsize(output_file) < 1024:
+            try: os.remove(output_file)
+            except Exception: pass
         print(f"[NeuralScaler-GPU] [EXCEPTION] {str(e)}")
     finally:
         export_state["is_processing"] = False
+
+def serve_video_stream(handler, file_path):
+    """支持 HTTP 206 Partial Content 的本地视频高保真流式播放服务"""
+    if not os.path.isfile(file_path):
+        handler.send_error(404, "视频文件不存在")
+        return
+
+    file_size = os.path.getsize(file_path)
+    range_header = handler.headers.get("Range")
+
+    if not range_header:
+        handler.send_response(200)
+        handler.send_header("Content-Type", "video/mp4")
+        handler.send_header("Content-Length", str(file_size))
+        handler.send_header("Accept-Ranges", "bytes")
+        handler.send_header("Access-Control-Allow-Origin", "*")
+        handler.end_headers()
+        with open(file_path, "rb") as f:
+            handler.copyfile(f, handler.wfile)
+        return
+
+    # 解析 Range: bytes=start-end
+    try:
+        byte_range = range_header.strip().split("=")[-1]
+        start_str, end_str = byte_range.split("-")
+        start = int(start_str)
+        end = int(end_str) if end_str else file_size - 1
+        end = min(end, file_size - 1)
+        length = end - start + 1
+
+        handler.send_response(206)
+        handler.send_header("Content-Type", "video/mp4")
+        handler.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        handler.send_header("Content-Length", str(length))
+        handler.send_header("Accept-Ranges", "bytes")
+        handler.send_header("Access-Control-Allow-Origin", "*")
+        handler.end_headers()
+
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            chunk_size = 128 * 1024
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                chunk = f.read(read_size)
+                if not chunk:
+                    break
+                handler.wfile.write(chunk)
+                remaining -= len(chunk)
+    except Exception:
+        pass
 
 class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -314,6 +379,13 @@ class AppHandler(SimpleHTTPRequestHandler):
                 export_state["gpu_load"] = tele["gpu_load"]
                 export_state["vram_used_mb"] = tele["vram_used_mb"]
             self.send_json(export_state)
+        elif clean_path == "/api/stream_video":
+            # 解析 query 参数 path
+            query_str = self.path.split("?")[1] if "?" in self.path else ""
+            params = parse_qs(query_str)
+            raw_path = params.get("path", [""])[0]
+            video_path = unquote(raw_path)
+            serve_video_stream(self, video_path)
         else:
             super().do_GET()
 
