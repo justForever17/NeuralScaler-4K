@@ -52,7 +52,14 @@ def assemble_bundle():
             size_mb = os.path.getsize(d_file) / (1024 * 1024)
             log(f"  + Bundled: {bf} ({size_mb:.1f} MB)")
         else:
-            log(f"  ! Warning: {bf} not found in {src_bin}")
+            found_in_path = shutil.which(bf)
+            if found_in_path:
+                d_file = os.path.join(dst_bin, bf)
+                shutil.copy2(found_in_path, d_file)
+                size_mb = os.path.getsize(d_file) / (1024 * 1024)
+                log(f"  + Bundled from PATH: {bf} ({size_mb:.1f} MB)")
+            else:
+                log(f"  ! Warning: {bf} not found in {src_bin} or PATH")
 
     # 4. Copy app.ico, LICENSE, and README.md
     src_ico = os.path.join(PROJECT_ROOT, "public", "app.ico")

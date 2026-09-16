@@ -8,6 +8,8 @@ on:
         required: false
         default: 'v2.2.0'
   push:
+    branches:
+      - master
     tags:
       - 'v*'
 
@@ -19,6 +21,11 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Set up FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: release
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -37,11 +44,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run Test Suite
-        run: python -m unittest discover -s tests -t . -p "test_*.py"
-
       - name: Assemble Portable Package
         run: python scripts/build_portable_release.py
+
+      - name: Run Test Suite
+        run: python -m unittest discover -s tests -t . -p "test_*.py"
 
       - name: Create Release Archive
         shell: pwsh

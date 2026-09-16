@@ -4,10 +4,18 @@ import unittest
 import subprocess
 import re
 
-PROJECT_ROOT = r"E:\comfyui\dlss5-super-resolution"
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RELEASE_DIR = os.path.join(PROJECT_ROOT, "release", "NeuralScaler-4K-Portable")
 
 class TestPortablePackaging(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.isdir(RELEASE_DIR):
+            sys.path.insert(0, PROJECT_ROOT)
+            from scripts.build_portable_release import ensure_frontend_built, assemble_bundle
+            ensure_frontend_built()
+            assemble_bundle()
+
     def test_01_release_folder_structure(self):
         self.assertTrue(os.path.isdir(RELEASE_DIR), "Release folder does not exist")
         
