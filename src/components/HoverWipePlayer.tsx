@@ -2,13 +2,17 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   IconPlay, 
   IconPause, 
+  IconStepBack,
+  IconStepForward,
   IconRotateCcw, 
   IconCamera, 
   IconVolume2, 
   IconVolumeX, 
   IconEye, 
   IconLayers,
-  IconZoomIn
+  IconZoomIn,
+  IconChevronLeft,
+  IconChevronRight
 } from './Icons';
 
 interface HoverWipePlayerProps {
@@ -190,28 +194,28 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
   };
 
   return (
-    <div className="flex-1 min-h-0 w-full rounded-2xl bg-[#0E1015]/95 border border-white/[0.08] shadow-2xl backdrop-blur-md flex flex-col p-3 space-y-2.5 relative select-none">
+    <div className="flex-1 min-h-0 w-full rounded-2xl dark:bg-[#0E1015]/95 bg-white/95 border dark:border-white/[0.08] border-black/[0.08] shadow-sm backdrop-blur-md flex flex-col p-3 space-y-2.5 relative select-none">
       {/* Player Header: Mode Indicator & Quick Actions */}
       <div className="flex items-center justify-between text-xs px-1 shrink-0">
         <div className="flex items-center gap-2">
           {isComparisonMode ? (
-            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300">
+            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-300">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
               </span>
               <span className="font-semibold tracking-wide text-[11px]">4K 神经超分对比模式</span>
-              <span className="text-gray-500 text-[10px]">|</span>
-              <span className="text-emerald-400/80 text-[10px] hidden sm:inline">
+              <span className="dark:text-gray-600 text-gray-400 text-[10px]">|</span>
+              <span className="text-emerald-600/80 dark:text-emerald-400/80 text-[10px] hidden sm:inline">
                 {viewMode === 'WIPE' ? '实时卷帘擦除 (左右滑动)' : viewMode === 'SOLO_4K' ? '纯净 4K 全画幅' : '纯净原片全画幅'}
               </span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">
+            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-300">
               <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
               <span className="font-semibold tracking-wide text-[11px]">原视频预览模式</span>
-              <span className="text-gray-500 text-[10px]">|</span>
-              <span className="text-cyan-400/70 text-[10px] hidden sm:inline">尚未导出 4K，当前仅播放原始输入源</span>
+              <span className="dark:text-gray-600 text-gray-400 text-[10px]">|</span>
+              <span className="text-cyan-600/80 dark:text-cyan-400/70 text-[10px] hidden sm:inline">尚未导出 4K，当前仅播放原始输入源</span>
             </div>
           )}
         </div>
@@ -224,10 +228,10 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
               <button
                 type="button"
                 onClick={handleToggleViewMode}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/[0.04] hover:bg-white/[0.08] text-gray-200 border border-white/[0.08] transition-colors active:scale-95 flex items-center gap-1"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium dark:bg-white/[0.04] bg-black/[0.04] hover:bg-black/[0.08] dark:hover:bg-white/[0.08] dark:text-gray-200 text-gray-700 border dark:border-white/[0.08] border-black/[0.08] transition-colors active:scale-[0.98] flex items-center gap-1 shadow-sm"
                 title="切换显示模式：左右卷帘 / 纯净4K / 纯净原片"
               >
-                <IconLayers className="w-3 h-3 text-emerald-400" />
+                <IconLayers className="w-3 h-3 text-emerald-500 dark:text-emerald-400" />
                 <span>{viewMode === 'WIPE' ? '卷帘对比' : viewMode === 'SOLO_4K' ? '查看 4K' : '查看原片'}</span>
               </button>
 
@@ -235,14 +239,14 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
               <button
                 type="button"
                 onClick={handleCycleZoom}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors active:scale-95 flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors active:scale-[0.98] flex items-center gap-1 shadow-sm ${
                   zoomLevel > 1 
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm' 
-                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-gray-200 border-white/[0.08]'
+                    ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-500/40 shadow-sm' 
+                    : 'dark:bg-white/[0.04] bg-black/[0.04] hover:bg-black/[0.08] dark:hover:bg-white/[0.08] dark:text-gray-200 text-gray-700 dark:border-white/[0.08] border-black/[0.08]'
                 }`}
                 title="局部细节放大检视 (放大至面部/发丝微观像素)"
               >
-                <IconZoomIn className="w-3 h-3 text-cyan-400" />
+                <IconZoomIn className="w-3 h-3 text-cyan-500 dark:text-cyan-400" />
                 <span>{zoomLevel === 1 ? '100% 全画幅' : `${zoomLevel * 100}% 局部特写`}</span>
               </button>
 
@@ -251,10 +255,10 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleFreeze}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors flex items-center gap-1 ${
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors flex items-center gap-1 shadow-sm ${
                     isFrozen 
-                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' 
-                      : 'bg-white/[0.04] text-gray-300 hover:text-white border-white/[0.08] hover:bg-white/[0.08]'
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30' 
+                      : 'dark:bg-white/[0.04] bg-black/[0.04] text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white dark:border-white/[0.08] border-black/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.08]'
                   }`}
                 >
                   {isFrozen ? <IconPause className="w-3 h-3" /> : <IconPlay className="w-3 h-3" />}
@@ -267,10 +271,10 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
           <button
             type="button"
             onClick={handleExportSnapshot}
-            className="px-2 py-1 rounded-lg text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/[0.08] transition-colors flex items-center gap-1 active:scale-95"
+            className="px-2 py-1 rounded-lg text-[11px] dark:bg-white/[0.04] bg-black/[0.04] hover:bg-black/[0.08] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white border dark:border-white/[0.08] border-black/[0.08] transition-colors flex items-center gap-1 active:scale-[0.98] shadow-sm"
             title="截取当前画面无损快照"
           >
-            <IconCamera className="w-3 h-3 text-cyan-400" />
+            <IconCamera className="w-3 h-3 text-cyan-500 dark:text-cyan-400" />
             <span>快照</span>
           </button>
         </div>
@@ -284,7 +288,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
         onClick={handleToggleFreeze}
         onDoubleClick={() => handleResetCenter()}
         onWheel={handleWheel}
-        className={`relative flex-1 min-h-[380px] w-full rounded-xl overflow-hidden bg-black flex items-center justify-center border border-white/[0.08] shadow-inner ${
+        className={`relative flex-1 min-h-[380px] w-full rounded-xl overflow-hidden bg-black flex items-center justify-center border border-black/20 dark:border-white/[0.08] shadow-inner ${
           isComparisonMode && viewMode === 'WIPE' ? 'cursor-col-resize' : 'cursor-default'
         }`}
       >
@@ -361,12 +365,14 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
               </div>
             )}
 
-            {/* Viewport Corner Badges with Concrete Resolutions */}
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black/80 border border-white/10 text-gray-300 text-[11px] font-mono font-semibold backdrop-blur-md pointer-events-none shadow-md">
-              &#9664; 原片 ({inputResolution})
+            {/* Viewport Corner Badges with Precision SVG Icons (No Unicode arrows) */}
+            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black/80 border border-white/10 text-gray-200 text-[11px] font-mono font-semibold backdrop-blur-md pointer-events-none shadow-md flex items-center gap-1">
+              <IconChevronLeft className="w-3 h-3 text-gray-400" />
+              <span>原片 ({inputResolution})</span>
             </div>
-            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-emerald-950/85 border border-emerald-500/50 text-emerald-300 text-[11px] font-mono font-semibold backdrop-blur-md pointer-events-none shadow-md">
-              4K DLSS 5 超分 ({outputResolution}) &#9654;
+            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-emerald-950/85 border border-emerald-500/50 text-emerald-300 text-[11px] font-mono font-semibold backdrop-blur-md pointer-events-none shadow-md flex items-center gap-1">
+              <span>4K DLSS 5 超分 ({outputResolution})</span>
+              <IconChevronRight className="w-3 h-3 text-emerald-400" />
             </div>
           </>
         ) : (
@@ -387,14 +393,14 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
       </div>
 
       {/* Video Transport & Timeline Controls - Exactly 1 compact row */}
-      <div className="flex flex-nowrap items-center justify-between px-1 text-xs text-gray-300 gap-3 shrink-0">
+      <div className="flex flex-nowrap items-center justify-between px-1 text-xs dark:text-gray-300 text-gray-700 gap-3 shrink-0">
         {/* Play/Pause & Step Buttons */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={handleTogglePlay}
             disabled={!leftSrc}
-            className="p-1.5 rounded-lg bg-white/[0.08] hover:bg-emerald-500/20 text-white hover:text-emerald-400 border border-white/10 transition-colors disabled:opacity-40"
+            className="p-1.5 rounded-lg dark:bg-white/[0.08] bg-black/[0.06] hover:bg-emerald-500/20 text-gray-800 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 border dark:border-white/10 border-black/10 transition-colors disabled:opacity-40 shadow-sm"
             title={isPlaying ? '暂停' : '播放'}
           >
             {isPlaying ? <IconPause className="w-3.5 h-3.5" /> : <IconPlay className="w-3.5 h-3.5" />}
@@ -404,24 +410,26 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
             type="button"
             onClick={(e) => handleStepFrame(false, e)}
             disabled={!leftSrc}
-            className="px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 hover:text-gray-200 border border-white/[0.06] text-[11px] font-mono transition-colors disabled:opacity-40"
+            className="px-2 py-1 rounded-lg dark:bg-white/[0.04] bg-black/[0.04] hover:bg-black/[0.08] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-gray-200 border dark:border-white/[0.06] border-black/[0.06] text-[11px] font-mono transition-colors disabled:opacity-40 flex items-center gap-1 shadow-sm"
             title="后退 1 帧"
           >
-            -1帧
+            <IconStepBack className="w-3 h-3" />
+            <span>-1帧</span>
           </button>
 
           <button
             type="button"
             onClick={(e) => handleStepFrame(true, e)}
             disabled={!leftSrc}
-            className="px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 hover:text-gray-200 border border-white/[0.06] text-[11px] font-mono transition-colors disabled:opacity-40"
+            className="px-2 py-1 rounded-lg dark:bg-white/[0.04] bg-black/[0.04] hover:bg-black/[0.08] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-gray-200 border dark:border-white/[0.06] border-black/[0.06] text-[11px] font-mono transition-colors disabled:opacity-40 flex items-center gap-1 shadow-sm"
             title="前进 1 帧"
           >
-            +1帧
+            <span>+1帧</span>
+            <IconStepForward className="w-3 h-3" />
           </button>
 
           {/* Timecode */}
-          <span className="font-mono text-gray-300 text-[11px] px-1 whitespace-nowrap">
+          <span className="font-mono dark:text-gray-300 text-gray-700 text-[11px] px-1 whitespace-nowrap">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
         </div>
@@ -436,7 +444,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
             value={currentTime}
             onChange={handleSeek}
             disabled={!leftSrc}
-            className="w-full h-1.5 bg-white/[0.08] hover:bg-white/[0.12] rounded-lg appearance-none cursor-pointer accent-emerald-400 disabled:opacity-40 transition-colors"
+            className="w-full h-1.5 dark:bg-white/[0.08] bg-black/[0.1] hover:bg-black/[0.15] dark:hover:bg-white/[0.12] rounded-lg appearance-none cursor-pointer accent-emerald-500 disabled:opacity-40 transition-colors"
           />
         </div>
 
@@ -446,7 +454,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
             <button
               type="button"
               onClick={() => handleResetCenter()}
-              className="px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/[0.06] transition-colors flex items-center gap-1 whitespace-nowrap"
+              className="px-2 py-1 rounded-lg dark:bg-white/[0.04] bg-black/[0.04] hover:bg-black/[0.08] dark:hover:bg-white/[0.08] text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white border dark:border-white/[0.06] border-black/[0.06] transition-colors flex items-center gap-1 whitespace-nowrap shadow-sm"
               title="将卷帘线复位至中央 50%"
             >
               <IconRotateCcw className="w-3 h-3 text-gray-400" />
@@ -458,7 +466,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
             type="button"
             onClick={() => setIsMuted(!isMuted)}
             disabled={!leftSrc}
-            className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 hover:text-gray-200 border border-white/[0.06] transition-colors disabled:opacity-40 shrink-0"
+            className="p-1.5 rounded-lg dark:bg-white/[0.04] bg-black/[0.04] hover:bg-black/[0.08] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-gray-200 border dark:border-white/[0.06] border-black/[0.06] transition-colors disabled:opacity-40 shrink-0 shadow-sm"
             title={isMuted ? '取消静音' : '静音'}
           >
             {isMuted ? <IconVolumeX className="w-3.5 h-3.5" /> : <IconVolume2 className="w-3.5 h-3.5" />}

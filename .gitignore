@@ -18,3 +18,8 @@ dist/
 *.tmp
 test_tailwind.css
 tests/fixtures/output_4k/
+
+# Release bundles and heavy local binaries
+release/
+bin/*.exe
+

@@ -39,3 +39,21 @@ export interface TelemetryState {
   etaSeconds: number;
   circuitBreakerStatus: 'OPERATIONAL' | 'SUSPENDED_VRAM' | 'TDR_RECOVERING' | 'HALTED_DISK_FULL';
 }
+
+export interface GpuDevice {
+  id: string;
+  name: string;
+  vram_mb: number;
+  is_discrete: boolean;
+  is_recommended: boolean;
+  tag: string;
+}
+
+export interface SystemInfo {
+  os: string;
+  gpus: GpuDevice[];
+  selected_gpu: string;
+}
+
+export type ThemeMode = 'dark' | 'light' | 'auto';
+

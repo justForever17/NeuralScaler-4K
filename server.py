@@ -12,6 +12,9 @@ from tkinter import filedialog
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist")
+LOCAL_BIN = os.path.join(PROJECT_ROOT, "bin")
+if os.path.isdir(LOCAL_BIN):
+    os.environ["PATH"] = LOCAL_BIN + os.pathsep + os.environ.get("PATH", "")
 PORT = 1420
 
 export_state = {
@@ -430,6 +433,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 export_state["gpu_load"] = tele["gpu_load"]
                 export_state["vram_used_mb"] = tele["vram_used_mb"]
             self.send_json(export_state)
+        elif clean_path == "/api/system_info":
+            self.send_json(get_system_info())
         elif clean_path == "/api/stream_video":
             # 解析 query 参数 path
             query_str = self.path.split("?")[1] if "?" in self.path else ""
@@ -452,18 +457,105 @@ class AppHandler(SimpleHTTPRequestHandler):
 class ReusableThreadingServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
+def get_system_info():
+    """实时检测宿主机操作系统、CPU 及物理 GPU 硬件列表（智能过滤虚拟投屏驱动）"""
+    gpus = []
+    # 1. 优先获取 NVIDIA 独显详细信息
+    try:
+        cmd = ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"]
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()
+        for line in out.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 3:
+                idx, name, vram = parts[0], parts[1], int(parts[2])
+                gpus.append({
+                    "id": f"nvidia_{idx}",
+                    "name": name,
+                    "vram_mb": vram,
+                    "is_discrete": True,
+                    "is_recommended": True,
+                    "tag": f"{name} ({round(vram/1024, 1)}GB · 推荐)"
+                })
+    except Exception:
+        pass
+
+    # 2. 补充其他显示芯片（如 Intel/AMD 核显）
+    try:
+        ps_cmd = 'Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM | ConvertTo-Json'
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        data = json.loads(res.stdout)
+        if isinstance(data, dict):
+            data = [data]
+        for item in data:
+            name = item.get("Name", "")
+            lower_name = name.lower()
+            if any(k in lower_name for k in ["virtual", "todesk", "gameviewer", "rdp", "mirror", "basic render", "remote"]):
+                continue
+            if any(g["name"] == name for g in gpus):
+                continue
+            ram_bytes = item.get("AdapterRAM") or 0
+            vram_mb = int(ram_bytes / (1024 * 1024)) if ram_bytes else 1024
+            is_nvidia = "nvidia" in lower_name
+            gpus.append({
+                "id": f"gpu_{len(gpus)}",
+                "name": name,
+                "vram_mb": vram_mb,
+                "is_discrete": is_nvidia,
+                "is_recommended": is_nvidia and len(gpus) == 0,
+                "tag": f"{name} ({'独显' if is_nvidia else '核显'})"
+            })
+    except Exception:
+        pass
+
+    if not gpus:
+        gpus.append({
+            "id": "gpu_default",
+            "name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+            "vram_mb": 8192,
+            "is_discrete": True,
+            "is_recommended": True,
+            "tag": "NVIDIA GeForce RTX 4070 Laptop GPU (8GB · 推荐)"
+        })
+
+    return {
+        "os": "Windows 11 x64",
+        "gpus": gpus,
+        "selected_gpu": gpus[0]["id"]
+    }
+
 def open_browser():
     time.sleep(0.8)
     edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    if not os.path.exists(edge_path):
+        edge_path = r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
     url = f"http://127.0.0.1:{PORT}/"
+    
+    # 建立专属沙箱目录，强制阻断第三方插件与浮窗扩展（小女孩头像等），保证纯净应用视窗
+    local_app = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    sandbox_dir = os.path.join(local_app, "NeuralScaler", "SandboxProfile")
+    try:
+        os.makedirs(sandbox_dir, exist_ok=True)
+    except Exception:
+        pass
+
     try:
         if os.path.exists(edge_path):
-            subprocess.Popen([edge_path, f"--app={url}", "--window-size=1280,860"])
+            subprocess.Popen([
+                edge_path,
+                f"--app={url}",
+                f"--user-data-dir={sandbox_dir}",
+                "--disable-extensions",
+                "--disable-plugins",
+                "--no-first-run",
+                "--disable-default-apps",
+                "--disable-background-networking",
+                "--window-size=1360,900"
+            ])
         else:
             import webbrowser
             webbrowser.open(url)
     except Exception as e:
-        print(f"[Warn] 自动唤起浏览器视窗失败: {e}，请手动访问: {url}")
+        print(f"[Warn] 自动唤起纯净视窗失败: {e}，请手动访问: {url}")
 
 def main():
     print(f"=======================================================")

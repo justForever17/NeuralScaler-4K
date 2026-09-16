@@ -3,7 +3,7 @@ import { TitleBar } from './components/TitleBar';
 import { Toolbar } from './components/Toolbar';
 import { HoverWipePlayer } from './components/HoverWipePlayer';
 import { TelemetryBar } from './components/TelemetryBar';
-import { VideoMetadata, AppConfig, TelemetryState, QualityProfile } from './types';
+import { VideoMetadata, AppConfig, TelemetryState, QualityProfile, GpuDevice, ThemeMode } from './types';
 
 export const App: React.FC = () => {
   const [video, setVideo] = useState<VideoMetadata | null>({
@@ -44,6 +44,68 @@ export const App: React.FC = () => {
     etaSeconds: 0,
     circuitBreakerStatus: 'OPERATIONAL'
   });
+
+  // Physical GPU devices state
+  const [gpus, setGpus] = useState<GpuDevice[]>([
+    {
+      id: 'gpu-default',
+      name: 'NVIDIA GeForce RTX 4070 (检测中...)',
+      vram_mb: 8192,
+      is_discrete: true,
+      is_recommended: true,
+      tag: 'NVIDIA'
+    }
+  ]);
+  const [selectedGpuId, setSelectedGpuId] = useState<string>('gpu-default');
+
+  // Theme state: dark | light | auto
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('ns_theme_mode');
+    return (saved === 'light' || saved === 'dark' || saved === 'auto') ? (saved as ThemeMode) : 'dark';
+  });
+
+  // Theme synchronizer with root DOM
+  useEffect(() => {
+    const root = document.documentElement;
+    const applyTheme = () => {
+      if (themeMode === 'dark') {
+        root.classList.add('dark');
+      } else if (themeMode === 'light') {
+        root.classList.remove('dark');
+      } else {
+        // Auto: follow system color scheme
+        const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (isSystemDark) {
+          root.classList.add('dark');
+        } else {
+          root.classList.remove('dark');
+        }
+      }
+    };
+
+    applyTheme();
+    localStorage.setItem('ns_theme_mode', themeMode);
+
+    if (themeMode === 'auto') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = () => applyTheme();
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    }
+  }, [themeMode]);
+
+  // Fetch real system information (OS, physical GPUs)
+  useEffect(() => {
+    fetch('/api/system_info')
+      .then(res => res.json())
+      .then(data => {
+        if (data.gpus && data.gpus.length > 0) {
+          setGpus(data.gpus);
+          setSelectedGpuId(data.selected_gpu || data.gpus[0].id);
+        }
+      })
+      .catch(err => console.error('Failed to load system info:', err));
+  }, []);
 
   // Verify whether the currently selected video already has a valid exported 4K file on disk
   const verifyExportedFile = useCallback(async (filePath: string, userDir?: string) => {
@@ -117,7 +179,7 @@ export const App: React.FC = () => {
           if (data.output_file) {
             setOutputVideoFile(data.output_file);
           }
-          alert(`🎉 4K 神经超分成功导出完成！\n文件保存至:\n${data.output_file}`);
+          alert(`4K 神经超分成功导出完成！\n文件保存至:\n${data.output_file}`);
         } else if (data.status === 'ERROR' && telemetry.isProcessing) {
           setTelemetry(prev => ({ ...prev, isProcessing: false }));
           alert(`导出异常: ${data.error_msg}`);
@@ -203,7 +265,7 @@ export const App: React.FC = () => {
     });
   };
 
-  // Start 4K export pipeline with selected profile and target resolution
+  // Start 4K export pipeline with selected profile, target resolution, and accelerator GPU
   const handleStartExport = async () => {
     if (!video) return;
     setTelemetry(prev => ({ ...prev, isProcessing: true, isPaused: false }));
@@ -216,7 +278,8 @@ export const App: React.FC = () => {
           userDir: config.outputDir,
           qualityProfile: config.qualityProfile,
           targetResolution: targetResolution,
-          totalFrames: telemetry.totalFrames
+          totalFrames: telemetry.totalFrames,
+          selectedGpu: selectedGpuId
         })
       });
       const data = await res.json();
@@ -238,10 +301,16 @@ export const App: React.FC = () => {
     : (video && video.width < video.height ? '2160×3840' : '3840×2160');
 
   return (
-    <div className="w-screen h-screen flex flex-col bg-[#08090C] text-gray-100 font-sans select-none overflow-hidden antialiased">
-      <TitleBar />
+    <div className="w-screen h-screen flex flex-col dark:bg-[#08090C] bg-[#F5F6F9] dark:text-gray-100 text-gray-900 font-sans select-none overflow-hidden antialiased transition-colors duration-200">
+      <TitleBar
+        gpus={gpus}
+        selectedGpuId={selectedGpuId}
+        onSelectGpu={setSelectedGpuId}
+        themeMode={themeMode}
+        onToggleTheme={setThemeMode}
+      />
 
-      <main className="flex-1 flex flex-col p-2.5 gap-2 w-full h-[calc(100vh-32px)] max-w-[1500px] mx-auto overflow-hidden">
+      <main className="flex-1 flex flex-col p-2.5 gap-2 w-full h-[calc(100vh-40px)] max-w-[1500px] mx-auto overflow-hidden">
         {/* Sleek Workstation Toolbar with Dropdowns (Single Row, Never Wraps) */}
         <Toolbar
           video={video}
