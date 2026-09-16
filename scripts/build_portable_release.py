@@ -3,7 +3,7 @@ import sys
 import shutil
 import subprocess
 
-PROJECT_ROOT = r"E:\comfyui\dlss5-super-resolution"
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RELEASE_DIR = os.path.join(PROJECT_ROOT, "release", "NeuralScaler-4K-Portable")
 
 def log(msg):
@@ -14,7 +14,8 @@ def ensure_frontend_built():
     index_html = os.path.join(dist_dir, "index.html")
     if not os.path.exists(index_html):
         log("Frontend dist not found, executing npm run build...")
-        res = subprocess.run(["npm.cmd", "run", "build"], cwd=PROJECT_ROOT)
+        npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+        res = subprocess.run([npm_cmd, "run", "build"], cwd=PROJECT_ROOT)
         if res.returncode != 0:
             raise RuntimeError("Frontend npm run build failed!")
     else:
@@ -53,10 +54,15 @@ def assemble_bundle():
         else:
             log(f"  ! Warning: {bf} not found in {src_bin}")
 
-    # 4. Copy app.ico
+    # 4. Copy app.ico, LICENSE, and README.md
     src_ico = os.path.join(PROJECT_ROOT, "public", "app.ico")
     if os.path.exists(src_ico):
         shutil.copy2(src_ico, os.path.join(RELEASE_DIR, "app.ico"))
+
+    for doc_name in ["LICENSE", "README.md"]:
+        doc_src = os.path.join(PROJECT_ROOT, doc_name)
+        if os.path.exists(doc_src):
+            shutil.copy2(doc_src, os.path.join(RELEASE_DIR, doc_name))
 
     # 5. Generate NeuralScaler.bat (Explicit Console Launcher, 100% stable, zero antivirus warnings)
     bat_content = '''@echo off

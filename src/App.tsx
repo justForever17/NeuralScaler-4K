@@ -64,23 +64,44 @@ export const App: React.FC = () => {
     return (saved === 'light' || saved === 'dark' || saved === 'auto') ? (saved as ThemeMode) : 'dark';
   });
 
-  // Theme synchronizer with root DOM
+  // Theme synchronizer with root DOM, Edge theme-color, and native DWM titlebar
   useEffect(() => {
     const root = document.documentElement;
     const applyTheme = () => {
+      let isDark = true;
       if (themeMode === 'dark') {
         root.classList.add('dark');
+        isDark = true;
       } else if (themeMode === 'light') {
         root.classList.remove('dark');
+        isDark = false;
       } else {
         // Auto: follow system color scheme
         const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         if (isSystemDark) {
           root.classList.add('dark');
+          isDark = true;
         } else {
           root.classList.remove('dark');
+          isDark = false;
         }
       }
+
+      // Update meta theme-color for Edge native titlebar skin
+      let metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (!metaTheme) {
+        metaTheme = document.createElement('meta');
+        metaTheme.setAttribute('name', 'theme-color');
+        document.head.appendChild(metaTheme);
+      }
+      metaTheme.setAttribute('content', isDark ? '#0D0E14' : '#F3F4F6');
+
+      // Inform backend server to update native Windows DWM window titlebar theme
+      fetch('/api/set_theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: isDark ? 'dark' : 'light' })
+      }).catch(() => {});
     };
 
     applyTheme();
@@ -93,6 +114,34 @@ export const App: React.FC = () => {
       return () => mediaQuery.removeEventListener('change', listener);
     }
   }, [themeMode]);
+
+  // Heartbeat loop to keep backend server aware of active frontend session
+  useEffect(() => {
+    const sendHeartbeat = () => {
+      fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+    };
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Listen for window close / unload to immediately notify backend server to exit
+  useEffect(() => {
+    const handleUnload = () => {
+      const payload = JSON.stringify({ reason: 'window_unload' });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/window_close', payload);
+      } else {
+        fetch('/api/window_close', { method: 'POST', keepalive: true, body: payload }).catch(() => {});
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('unload', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('unload', handleUnload);
+    };
+  }, []);
 
   // Fetch real system information (OS, physical GPUs)
   useEffect(() => {

@@ -52,6 +52,81 @@ if os.path.isdir(LOCAL_BIN):
 PORT = 1420
 NO_WINDOW_FLAGS = 0x08000000 if sys.platform == "win32" else 0
 
+# 生命周期管理与视窗跟随退出
+last_heartbeat_time = 0.0
+heartbeat_received_once = False
+shutdown_triggered = False
+server_instance = None
+edge_process = None
+
+def trigger_graceful_shutdown(reason=""):
+    global shutdown_triggered
+    if shutdown_triggered:
+        return
+    shutdown_triggered = True
+    print(f"\n[Info] {reason}，核心引擎正在安全退出...")
+    def _do_exit():
+        time.sleep(0.4)
+        if server_instance:
+            try:
+                server_instance.shutdown()
+            except Exception:
+                pass
+        os._exit(0)
+    threading.Thread(target=_do_exit, daemon=True).start()
+
+def watchdog_loop():
+    """监听前端心跳与 Edge 进程状态，若视窗关闭则自动销毁控制台进程"""
+    global last_heartbeat_time, heartbeat_received_once
+    while not shutdown_triggered:
+        time.sleep(1.0)
+        # 前端连上过且心跳中断超过 4.5 秒，说明视窗已被关闭
+        if heartbeat_received_once and (time.time() - last_heartbeat_time > 4.5):
+            trigger_graceful_shutdown("前端应用视窗已断开连接（心跳超时）")
+            break
+        # Edge 进程句柄检测
+        if edge_process and edge_process.poll() is not None:
+            trigger_graceful_shutdown("前端 Edge 视窗进程已关闭")
+            break
+
+def set_native_window_theme(is_dark: bool):
+    """通过 Windows 11 DWMAPI 动态改变宿主窗口顶栏（控制按钮栏）的深浅色系"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        dwmapi = ctypes.windll.dwmapi
+        user32 = ctypes.windll.user32
+
+        found_hwnds = []
+        def enum_cb(hwnd, lparam):
+            if user32.IsWindowVisible(hwnd):
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value
+                    if "NeuralScaler" in title or "127.0.0.1:1420" in title:
+                        found_hwnds.append(hwnd)
+            return True
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+
+        val = ctypes.c_int(1 if is_dark else 0)
+        for hwnd in found_hwnds:
+            dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(val),
+                ctypes.sizeof(val)
+            )
+    except Exception:
+        pass
+
+
 export_state = {
     "is_processing": False,
     "is_paused": False,
@@ -353,6 +428,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             pass
 
     def do_POST(self):
+        global last_heartbeat_time, heartbeat_received_once
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
         try:
@@ -361,6 +437,23 @@ class AppHandler(SimpleHTTPRequestHandler):
             req = {}
 
         clean_path = self.path.split("?")[0]
+
+        if clean_path == "/api/heartbeat":
+            last_heartbeat_time = time.time()
+            heartbeat_received_once = True
+            self.send_json({"status": "OK"})
+            return
+
+        elif clean_path == "/api/window_close":
+            self.send_json({"status": "BYE"})
+            trigger_graceful_shutdown("收到前端视窗关闭信标")
+            return
+
+        elif clean_path == "/api/set_theme":
+            theme = req.get("theme", "dark")
+            set_native_window_theme(theme == "dark")
+            self.send_json({"status": "OK", "theme": theme})
+            return
         if clean_path == "/api/native_select_file":
             root = tk.Tk()
             root.withdraw()
@@ -615,9 +708,10 @@ def open_browser():
     except Exception:
         pass
 
+    global edge_process
     try:
         if os.path.exists(edge_path):
-            subprocess.Popen([
+            edge_process = subprocess.Popen([
                 edge_path,
                 f"--app={url}",
                 f"--user-data-dir={sandbox_dir}",
@@ -635,12 +729,18 @@ def open_browser():
         print(f"[Warn] 自动唤起纯净视窗失败: {e}，请手动访问: {url}")
 
 def main():
+    global server_instance
     # 启动健康检查与视窗唤起线程
     t = threading.Thread(target=open_browser, daemon=True)
     t.start()
     
+    # 启动视窗关闭监控线程
+    w = threading.Thread(target=watchdog_loop, daemon=True)
+    w.start()
+    
     try:
         server = ReusableThreadingServer(("127.0.0.1", PORT), AppHandler)
+        server_instance = server
         print(f"=======================================================")
         print(f"  NeuralScaler-DLSS5 Desktop Engine Backend v2.2")
         print(f"  Local Web Service running on: http://127.0.0.1:{PORT}")

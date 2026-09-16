@@ -1,0 +1,4 @@
+# NeuralScaler 4K Core Server
+# Designed with zero heavy dependencies: server.py utilizes Python 3.9+ standard library.
+# Optional for running standalone unit tests:
+# unittest is included in the Python standard library.
