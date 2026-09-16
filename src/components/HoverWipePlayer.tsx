@@ -54,15 +54,51 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
   const leftSrc = inputVideoPath ? `/api/stream_video?path=${encodeURIComponent(inputVideoPath)}` : '';
   const rightSrc = outputVideoPath ? `/api/stream_video?path=${encodeURIComponent(outputVideoPath)}` : '';
 
-  // Synchronize right video with left video whenever rightSrc mounts
+  // Continuous High-Precision Phase-Lock Synchronization Engine
   useEffect(() => {
-    if (isComparisonMode && videoRightRef.current && videoLeftRef.current) {
-      videoRightRef.current.currentTime = videoLeftRef.current.currentTime;
-      if (isPlaying && !videoLeftRef.current.paused) {
-        videoRightRef.current.play().catch(() => {});
+    if (!isComparisonMode) return;
+    let animId: number;
+
+    const syncLoop = () => {
+      const left = videoLeftRef.current;
+      const right = videoRightRef.current;
+
+      if (left && right) {
+        if (!left.paused && !right.paused) {
+          const drift = right.currentTime - left.currentTime;
+          
+          if (Math.abs(drift) > 0.25) {
+            // Severe drift (e.g. seek, loop restart) -> instant hard align
+            right.currentTime = left.currentTime;
+            right.playbackRate = 1.0;
+          } else if (Math.abs(drift) > 0.015) {
+            // Micro-drift (0.5 to 7 frames): smoothly modulate playbackRate to snap into exact phase lock
+            // drift < 0 means right lags behind -> speed up (1.05x ~ 1.15x)
+            // drift > 0 means right is ahead -> slow down (0.85x ~ 0.95x)
+            const targetRate = 1.0 - Math.min(0.2, Math.max(-0.2, drift * 4.0));
+            if (Math.abs(right.playbackRate - targetRate) > 0.01) {
+              right.playbackRate = targetRate;
+            }
+          } else {
+            // In exact frame phase lock (< 15ms)!
+            if (right.playbackRate !== 1.0) {
+              right.playbackRate = 1.0;
+            }
+          }
+        } else if (left.paused && right.paused) {
+          // When paused / frozen: lock both videos to the EXACT same timestamp!
+          if (Math.abs(right.currentTime - left.currentTime) > 0.005) {
+            right.currentTime = left.currentTime;
+          }
+        }
       }
-    }
-  }, [rightSrc, isComparisonMode]);
+
+      animId = requestAnimationFrame(syncLoop);
+    };
+
+    animId = requestAnimationFrame(syncLoop);
+    return () => cancelAnimationFrame(animId);
+  }, [isComparisonMode, rightSrc]);
 
   // 144Hz Zero-Lag Instant Wipe Tracking
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -81,7 +117,19 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
   const handleToggleFreeze = (e: React.MouseEvent) => {
     if (!isComparisonMode || viewMode !== 'WIPE') return;
     e.stopPropagation();
-    setIsFrozen(prev => !prev);
+    const nextFrozen = !isFrozen;
+    setIsFrozen(nextFrozen);
+    if (nextFrozen) {
+      // 开启定格时，自动暂停并将对比层强行帧对齐
+      setIsPlaying(false);
+      if (videoLeftRef.current) videoLeftRef.current.pause();
+      if (videoRightRef.current) {
+        videoRightRef.current.pause();
+        if (videoLeftRef.current) {
+          videoRightRef.current.currentTime = videoLeftRef.current.currentTime;
+        }
+      }
+    }
   };
 
   const handleResetCenter = (e?: React.MouseEvent) => {
@@ -100,41 +148,61 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
     setViewMode(prev => prev === 'WIPE' ? 'SOLO_4K' : prev === 'SOLO_4K' ? 'SOLO_ORIG' : 'WIPE');
   };
 
-  // Synchronized Play/Pause
+  // 严格帧对齐同步 Play/Pause
   const handleTogglePlay = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const nextPlaying = !isPlaying;
     setIsPlaying(nextPlaying);
-    if (videoLeftRef.current) {
-      if (nextPlaying) videoLeftRef.current.play().catch(() => {});
-      else videoLeftRef.current.pause();
-    }
-    if (videoRightRef.current) {
-      if (nextPlaying) videoRightRef.current.play().catch(() => {});
-      else videoRightRef.current.pause();
+    const left = videoLeftRef.current;
+    const right = videoRightRef.current;
+
+    if (left && right) {
+      if (nextPlaying) {
+        // 播放前先校准到同一毫秒时间戳
+        right.currentTime = left.currentTime;
+        right.playbackRate = 1.0;
+        left.play().catch(() => {});
+        right.play().catch(() => {});
+      } else {
+        left.pause();
+        right.pause();
+        // 暂停时强制锁死到同一帧
+        right.currentTime = left.currentTime;
+      }
+    } else if (left) {
+      if (nextPlaying) left.play().catch(() => {});
+      else left.pause();
     }
   };
 
-  // Sync seek time
+  // 严格同步 Seek 进度定位
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const t = parseFloat(e.target.value);
     setCurrentTime(t);
     if (videoLeftRef.current) videoLeftRef.current.currentTime = t;
-    if (videoRightRef.current) videoRightRef.current.currentTime = t;
+    if (videoRightRef.current) {
+      videoRightRef.current.currentTime = t;
+      videoRightRef.current.playbackRate = 1.0;
+    }
   };
 
-  // Step frame (approx 1/30s = 0.0333s)
+  // 精确单帧进退 (1/30s = 0.033333s)
   const handleStepFrame = (forward: boolean, e: React.MouseEvent) => {
     e.stopPropagation();
     setIsPlaying(false);
-    if (videoLeftRef.current) videoLeftRef.current.pause();
-    if (videoRightRef.current) videoRightRef.current.pause();
+    const left = videoLeftRef.current;
+    const right = videoRightRef.current;
+    if (left) left.pause();
+    if (right) right.pause();
     
-    const delta = forward ? 0.0333 : -0.0333;
+    const delta = forward ? (1.0 / 30.0) : -(1.0 / 30.0);
     const newTime = Math.max(0, Math.min(duration, currentTime + delta));
     setCurrentTime(newTime);
-    if (videoLeftRef.current) videoLeftRef.current.currentTime = newTime;
-    if (videoRightRef.current) videoRightRef.current.currentTime = newTime;
+    if (left) left.currentTime = newTime;
+    if (right) {
+      right.currentTime = newTime;
+      right.playbackRate = 1.0;
+    }
   };
 
   // Mouse wheel scrubbing when frozen
@@ -148,7 +216,7 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
     if (videoRightRef.current) videoRightRef.current.currentTime = newTime;
   };
 
-  // Master video time sync & loop alignment
+  // 主视频时间更新与循环对齐
   const handleTimeUpdate = () => {
     const master = videoLeftRef.current;
     if (!master) return;
@@ -157,9 +225,10 @@ export const HoverWipePlayer: React.FC<HoverWipePlayerProps> = ({
     if (master.duration && !isNaN(master.duration) && master.duration !== duration) {
       setDuration(master.duration);
     }
-    // High-precision sync: if right video drifts more than 30ms, nudge it
-    if (videoRightRef.current && Math.abs(videoRightRef.current.currentTime - t) > 0.03) {
-      videoRightRef.current.currentTime = t;
+    // 循环边界快速复位对齐
+    if (videoRightRef.current && t < 0.2 && videoRightRef.current.currentTime > 1.0) {
+      videoRightRef.current.currentTime = 0;
+      videoRightRef.current.playbackRate = 1.0;
     }
   };
 

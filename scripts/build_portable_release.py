@@ -22,16 +22,13 @@ def ensure_frontend_built():
 
 def assemble_bundle():
     log(f"Target release directory: {RELEASE_DIR}")
-    if os.path.exists(RELEASE_DIR):
-        log("Cleaning previous release directory...")
-        shutil.rmtree(RELEASE_DIR)
     os.makedirs(RELEASE_DIR, exist_ok=True)
 
     # 1. Copy dist/
     src_dist = os.path.join(PROJECT_ROOT, "dist")
     dst_dist = os.path.join(RELEASE_DIR, "dist")
     log(f"Copying {src_dist} -> {dst_dist}")
-    shutil.copytree(src_dist, dst_dist)
+    shutil.copytree(src_dist, dst_dist, dirs_exist_ok=True)
 
     # 2. Copy server.py
     src_server = os.path.join(PROJECT_ROOT, "server.py")
