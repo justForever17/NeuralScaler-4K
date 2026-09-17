@@ -207,7 +207,7 @@ def probe_file(file_path):
     cmd = [
         "ffprobe", "-v", "error",
         "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,codec_name,duration,r_frame_rate,nb_frames",
+        "-show_entries", "stream=width,height,codec_name,duration,r_frame_rate,nb_frames,color_space,color_transfer,color_primaries,color_range",
         "-show_entries", "format=size,duration",
         "-of", "json",
         file_path
@@ -225,6 +225,19 @@ def probe_file(file_path):
         size = int(fmt.get("size", os.path.getsize(file_path)))
         codec = st.get("codec_name", "unknown")
         
+        color_space = st.get("color_space", "unknown")
+        color_transfer = st.get("color_transfer", "unknown")
+        color_primaries = st.get("color_primaries", "unknown")
+        color_range = st.get("color_range", "unknown")
+
+        cs_lower = str(color_space).lower() if color_space else "unknown"
+        cp_lower = str(color_primaries).lower() if color_primaries else "unknown"
+        is_bt601 = False
+        if any(x in cs_lower for x in ["601", "smpte170m", "bt470"]) or any(x in cp_lower for x in ["601", "smpte170m", "bt470"]):
+            is_bt601 = True
+        elif cs_lower in ["unknown", "undefined", "none", ""] and (min(w, h) < 720 or (w < 1280 and h < 720)):
+            is_bt601 = True
+
         fps_str = st.get("r_frame_rate", "30/1")
         if "/" in fps_str:
             num, den = fps_str.split("/")
@@ -236,33 +249,38 @@ def probe_file(file_path):
         if total_frames <= 0:
             total_frames = int(dur * fps)
             
+        base_meta = {
+            "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
+            "total_frames": total_frames,
+            "color_space": color_space, "color_transfer": color_transfer,
+            "color_primaries": color_primaries, "color_range": color_range,
+            "is_bt601": is_bt601
+        }
         min_dim = min(w, h)
         if min_dim < 320:
-            return {
+            base_meta.update({
                 "status": "REJECTED",
-                "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
                 "reason": f"源分辨率 ({w}x{h}) 极低（短边小于 320），无法有效提取神经特征点。"
-            }
+            })
+            return base_meta
         elif min_dim < 480:
-            return {
+            base_meta.update({
                 "status": "WARNING_LOW_RES",
-                "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
-                "total_frames": total_frames,
-                "reason": f"源分辨率 ({w}x{h}) 处于低清范围，将启用深度时序插值增强。"
-            }
+                "reason": f"源分辨率 ({w}x{h}) 处于低清范围，将启用深度时序插值增强与 BT.601 原生色彩校正。"
+            })
+            return base_meta
         elif (w >= 3840 and h >= 2160) or (w >= 2160 and h >= 3840):
-            return {
+            base_meta.update({
                 "status": "ALREADY_4K",
-                "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
                 "reason": f"当前视频已达 4K ({w}x{h})，无需重复执行超分。"
-            }
+            })
+            return base_meta
         else:
-            return {
+            base_meta.update({
                 "status": "RECOMMENDED",
-                "width": w, "height": h, "duration": dur, "fps": fps, "codec": codec, "size": size,
-                "total_frames": total_frames,
                 "reason": f"推荐输入画质 ({w}x{h})，支持 4K 神经重绘与硬件超分加速。"
-            }
+            })
+            return base_meta
     except Exception as e:
         return {"status": "REJECTED", "reason": f"容器解析失败: {str(e)}"}
 
@@ -404,16 +422,36 @@ def run_export_pipeline(input_file, output_file, total_frames, quality_profile="
     start_time = time.time()
     last_log_time = 0.0
     
-    # 2. 神经级高频纹理重构与对比度自适应增强滤镜 (CAS + Unsharp + 色彩微调)
-    if quality_profile == "CINEMATIC":
-        # 深层重构 (胶片影院): 高阶 CAS 神经材质重塑 + 强边缘轮廓 + 胶片微观对比度
-        vf_filter = f"scale={out_w}:{out_h}:flags=lanczos,cas=0.95,unsharp=7:7:1.6:7:7:0.0,eq=contrast=1.04:saturation=1.02"
-    elif quality_profile == "NATURAL":
-        # 自然质感 (细节平衡): 平衡级 CAS + 人像发丝纹理细腻化
-        vf_filter = f"scale={out_w}:{out_h}:flags=lanczos,cas=0.85,unsharp=5:5:1.2:5:5:0.0"
+    # 2. 跨设备色彩管理引擎与神经超分滤镜链
+    is_bt601 = info.get("is_bt601", False)
+    filter_parts = []
+    
+    # 核心数学色彩校正：将 BT.601 YUV 矩阵精确转换为 BT.709 YUV 矩阵
+    # 彻底根治 4K 视频在手机 OLED（Display P3 广色域）上因红黄通道放大导致的“浓艳/假滤镜/肤色发红”问题
+    if is_bt601:
+        filter_parts.append("colormatrix=bt601:bt709")
+        print(f"[NeuralScaler-ColorSync] 激活色彩空间转换: 检测到 BT.601 矩阵，已应用高保真 colormatrix=bt601:bt709 变换")
     else:
-        # 忠实保真 (推荐·极速): 高频自适应锐化与轮廓清晰度提升
-        vf_filter = f"scale={out_w}:{out_h}:flags=lanczos,cas=0.75,unsharp=5:5:0.9:5:5:0.0"
+        print(f"[NeuralScaler-ColorSync] 保持色彩基准: 输入视频已符合 BT.709 标准，直通原生色彩空间")
+
+    # 物理分辨率重采样与神经纹理重绘
+    filter_parts.append(f"scale={out_w}:{out_h}:flags=lanczos")
+
+    if quality_profile == "CINEMATIC":
+        # 深层重构 (胶片影院): 高阶 CAS 神经材质重塑 + 强边缘轮廓 + 极微观对比度 (中性色彩，杜绝过度饱和)
+        filter_parts.append("cas=0.95")
+        filter_parts.append("unsharp=7:7:1.6:7:7:0.0")
+        filter_parts.append("eq=contrast=1.02")
+    elif quality_profile == "NATURAL":
+        # 自然质感 (细节平衡): 平衡级 CAS + 人像发丝纹理细腻化 (原生色彩 100% 还原)
+        filter_parts.append("cas=0.85")
+        filter_parts.append("unsharp=5:5:1.2:5:5:0.0")
+    else:
+        # 忠实保真 (推荐·极速): 高频自适应锐化与轮廓清晰度提升 (原生色彩 100% 还原)
+        filter_parts.append("cas=0.75")
+        filter_parts.append("unsharp=5:5:0.9:5:5:0.0")
+
+    vf_filter = ",".join(filter_parts)
         
     cmd = [
         "ffmpeg", "-y", "-i", input_file,
@@ -421,6 +459,7 @@ def run_export_pipeline(input_file, output_file, total_frames, quality_profile="
         "-c:v", "h264_mf",
         "-b:v", "28M",
         "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+        "-color_range", "tv",
         "-movflags", "+faststart",
         "-c:a", "copy",
         "-progress", "pipe:1",

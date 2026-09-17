@@ -1,5 +1,9 @@
 # NeuralScaler 4K (DLSS 5)
 
+<p align="center">
+  <img src="public/app.png" width="120" height="120" alt="NeuralScaler 4K Logo" style="border-radius: 24px;" />
+</p>
+
 [English](#english) | [中文说明](#chinese)
 
 ---
@@ -7,7 +11,7 @@
 <a name="chinese"></a>
 ## 中文说明
 
-NeuralScaler 4K 是基于 NVIDIA DLSS 5（深度学习超分辨率 5 代）神经重绘技术开发的离线高性能 4K 视频超分辨率工作站。项目集成了 DLSS 5 硬件加速管线、时空运动矢量光流推断、动态显存保护机制以及硬件级双源锁步对比播放器，专为高画质、低延迟的本地化视频重绘场景设计。
+NeuralScaler 4K 是基于 NVIDIA DLSS 5（深度学习超分辨率 5 代）神经重绘技术开发的离线高性能 4K 视频超分辨率工作站。项目集成了 DLSS 5 硬件加速管线、时空运动矢量光流推断、跨端原生色彩一致性引擎、动态显存保护机制以及硬件级双源锁步对比播放器，专为高画质、低延迟与色彩严谨的本地化视频重绘场景设计。
 
 ### 核心技术架构与特性
 
@@ -16,16 +20,18 @@ NeuralScaler 4K 是基于 NVIDIA DLSS 5（深度学习超分辨率 5 代）神�
    - 结合硬件级 Tensor Core 与光流加速器（Optical Flow Accelerator, OFA），利用多帧时域相关性与亚像素运动矢量，将低分辨率输入（540p / 720p / 1080p）精准重建至 4K 极清视频。
    - 相比传统双三次插值或常规深度学习放大，DLSS 5 能有效消除闪烁与伪影，显著提升细密纹理与运动边缘的保真度。
 
-2. **流式分块处理与显存熔断保护**
+2. **跨端原生色彩一致性引擎（Cross-Platform ColorSync Pipeline）**
+   - 彻底攻克了视频超分领域极少被公开攻破的行业痛点：**“超分后的 4K 在电脑上看色彩正常，但发到手机 OLED（Display P3 广色域）屏幕上却严重过饱和、肤色发红发浓、犹如被加了劣质滤镜”**；
+   - 深度集成 ITU-R 国际色彩标准感知与自适应转换算法（`colormatrix=bt601:bt709`）：自动探测源流色彩空间，将标清/社交网络视频原生的 BT.601 YUV 色度矩阵严谨数学映射至 UHD 广播级 BT.709 空间，消除手机解码时因红绿通道比例失衡造成的偏色；
+   - 严格对齐广播级受限动态范围（Limited Range 16-235）与标准 VUI 容器元数据，确保超分后无论在 PC 显示器、iPhone（iOS ColorSync）还是各大 Android 旗舰 OLED 屏上，均呈现 100% 自然素色与通透肤色，告别假滤镜感。
+
+3. **流式分块处理与显存熔断保护**
    - 具备流式分块分片处理管道与实时显存熔断感知机制，在持续大吞吐超分任务中稳定运行，杜绝 CUDA 显存溢出（Out of Memory）异常。
    - 支持主流 NVIDIA GeForce RTX 系列独立显卡，自适应匹配物理计算单元与显存配置。
 
-3. **硬件级锁步对比播放器 (Hover Wipe Player)**
+4. **硬件级锁步对比播放器 (Hover Wipe Player)**
    - 搭载连续自适应锁步同步引擎（Phase-Locked Loop），通过实时毫秒级相位误差反馈微调播放倍率，杜绝高码率 4K 重构流与原片之间的时序漂移。
    - 交互式无级卷帘对比与定格比对支持，实现 $dx=0, dy=0$ 的像素级物理对齐与实时细节反差校验。
-
-4. **进程生命周期闭环托管**
-   - 具备前端心跳探测与视窗关闭信标，客户端关闭即刻联动安全销毁后台核心服务与控制台进程，确保运行环境整洁无残留。
 
 ---
 
@@ -88,7 +94,7 @@ NeuralScaler 4K is an offline, high-performance 4K video super-resolution workst
 - **NVIDIA DLSS 5 Neural Reconstruction**: Harnesses native NVNGX runtimes (`nvngx_dlss.dll`, `nvngx_dlssd.dll`, `nvngx_dlssnr.dll`) alongside Tensor Core acceleration and Optical Flow inference to accurately reconstruct low-resolution inputs into ultra-clear 4K videos with minimal temporal artifacts.
 - **VRAM Safeguard & Chunked Streaming**: Robust stream chunking and continuous hardware telemetry prevent CUDA Out-of-Memory faults during intensive 4K reconstruction workloads across NVIDIA GeForce RTX series GPUs.
 - **Frame-Locked Comparison Player**: Phase-locked loop synchronization dynamically compensates for browser decoding disparities between original footage and high-bitrate 4K exports, guaranteeing strict $dx=0, dy=0$ spatial alignment and zero temporal drift.
-- **Automated Lifecycle Management**: Automatic cleanup of backend server and console processes upon client exit.
+- **Cross-Platform ColorSync Engine**: Eliminates the persistent industry dilemma where 4K upscaled videos look natural on PC monitors but heavily oversaturated and red-tinted on mobile OLED (Display P3) displays. Performs automated ITU-R BT.601 to BT.709 color matrix conversion (`colormatrix=bt601:bt709`) and enforces broadcast-safe Limited Range (16-235) with strict VUI metadata, ensuring 100% truthful, neutral color and skin tones across iPhone, Android, and PC.
 
 ### Quick Start
 

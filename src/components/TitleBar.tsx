@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  IconAppLogo, 
   IconGpu, 
   IconSun, 
   IconMoon, 
@@ -32,7 +31,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     <header className="flex flex-nowrap items-center justify-between px-3.5 h-10 select-none bg-white/95 dark:bg-[#0D0E14]/95 border-b border-black/[0.08] dark:border-white/[0.08] backdrop-blur-xl text-gray-700 dark:text-gray-300 text-xs z-50 shrink-0 overflow-hidden shadow-sm">
       {/* Brand & Logo */}
       <div className="flex items-center gap-2.5 shrink-0">
-        <IconAppLogo className="w-5 h-5 shadow-sm shrink-0" />
+        <img src="/app.png" alt="NeuralScaler 4K" className="w-5 h-5 rounded-md shadow-sm shrink-0 object-cover" />
         <div className="flex items-baseline gap-1.5">
           <span className="font-bold tracking-wide dark:text-white text-gray-900 font-sans text-xs">
             NeuralScaler <span className="font-semibold text-emerald-400">4K</span>
