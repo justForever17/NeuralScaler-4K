@@ -70,7 +70,7 @@ def assemble_bundle():
     if os.path.exists(src_png):
         shutil.copy2(src_png, os.path.join(RELEASE_DIR, "app.png"))
 
-    for doc_name in ["LICENSE", "README.md"]:
+    for doc_name in ["LICENSE", "README.md", "README-ZH.md"]:
         doc_src = os.path.join(PROJECT_ROOT, doc_name)
         if os.path.exists(doc_src):
             shutil.copy2(doc_src, os.path.join(RELEASE_DIR, doc_name))

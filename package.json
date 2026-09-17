@@ -1,6 +1,6 @@
 {
   "name": "neuralscaler",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Lightweight, offline 4K video super-resolution CLI powered by NVIDIA DLSS 5 and hardware acceleration.",
   "type": "module",
   "bin": {
@@ -14,6 +14,7 @@
     "server.py",
     "public",
     "README.md",
+    "README-ZH.md",
     "LICENSE"
   ],
   "keywords": [

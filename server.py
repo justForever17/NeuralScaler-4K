@@ -14,6 +14,18 @@ import argparse
 
 is_cli_mode = False
 
+def get_app_version():
+    try:
+        pkg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "package.json")
+        if os.path.exists(pkg_path):
+            with open(pkg_path, "r", encoding="utf-8") as f:
+                return json.load(f).get("version", "2.2.2")
+    except Exception:
+        pass
+    return "2.2.2"
+
+APP_VERSION = get_app_version()
+
 # 确保在 pythonw.exe 无终端模式下输出流安全，防止 NoneType 导致 HTTP 服务崩溃
 class SafeLogWriter:
     def __init__(self, log_path=None):
@@ -901,7 +913,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json({
                 "status": "OK",
                 "service": "NeuralScaler-4K",
-                "version": "2.2.1",
+                "version": APP_VERSION,
                 "is_processing": export_state["is_processing"],
                 "queue_length": len(queue_manager.get_queue())
             })
