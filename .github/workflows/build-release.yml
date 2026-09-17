@@ -177,16 +177,14 @@ jobs:
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/NeuralScaler-4K-Setup-v${{ env.RELEASE_VERSION }}.exe
-            release/NeuralScaler-4K-Portable-windows-x64-v${{ env.RELEASE_VERSION }}.zip
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $setupFile = "release/NeuralScaler-4K-Setup-v$env:RELEASE_VERSION.exe"
+          $zipFile = "release/NeuralScaler-4K-Portable-windows-x64-v$env:RELEASE_VERSION.zip"
+          Write-Host "Creating GitHub Release for $env:RELEASE_TAG via GitHub CLI..."
+          gh release create $env:RELEASE_TAG $setupFile $zipFile --title "NeuralScaler 4K $env:RELEASE_TAG" --generate-notes
 
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v')
