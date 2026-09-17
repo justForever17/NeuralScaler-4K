@@ -3,6 +3,7 @@ import { TitleBar } from './components/TitleBar';
 import { Toolbar } from './components/Toolbar';
 import { HoverWipePlayer } from './components/HoverWipePlayer';
 import { TelemetryBar } from './components/TelemetryBar';
+import { HardwareGateModal } from './components/HardwareGateModal';
 import { VideoMetadata, AppConfig, TelemetryState, QualityProfile, GpuDevice, ThemeMode } from './types';
 
 export const App: React.FC = () => {
@@ -50,13 +51,18 @@ export const App: React.FC = () => {
     {
       id: 'gpu-default',
       name: 'NVIDIA GeForce RTX 4070 (检测中...)',
+      vendor: 'NVIDIA',
+      vendor_cn: 'NVIDIA (N卡)',
       vram_mb: 8192,
       is_discrete: true,
       is_recommended: true,
+      is_supported: true,
+      rejection_reason: null,
       tag: 'NVIDIA'
     }
   ]);
   const [selectedGpuId, setSelectedGpuId] = useState<string>('gpu-default');
+  const [isGateModalOpen, setIsGateModalOpen] = useState<boolean>(false);
 
   // Theme state: dark | light | auto
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -314,9 +320,18 @@ export const App: React.FC = () => {
     });
   };
 
+  const activeGpu = gpus.find(g => g.id === selectedGpuId) || gpus[0];
+
   // Start 4K export pipeline with selected profile, target resolution, and accelerator GPU
   const handleStartExport = async () => {
     if (!video) return;
+
+    // 硬件设备准入门禁校验：识别A卡和N卡以及显存最少要求2GB，其他型号显卡弹窗警告并拒绝生成
+    if (activeGpu && !activeGpu.is_supported) {
+      setIsGateModalOpen(true);
+      return; // 拒绝生成
+    }
+
     setTelemetry(prev => ({ ...prev, isProcessing: true, isPaused: false }));
     try {
       const res = await fetch('/api/start_export', {
@@ -332,6 +347,10 @@ export const App: React.FC = () => {
         })
       });
       const data = await res.json();
+      if (data.status === 'REJECTED') {
+        setIsGateModalOpen(true);
+        throw new Error(data.msg || '硬件门禁校验未通过，已拒绝生成');
+      }
       if (data.status !== 'STARTED') {
         throw new Error(data.msg || '无法启动导出任务');
       }
@@ -357,6 +376,7 @@ export const App: React.FC = () => {
         onSelectGpu={setSelectedGpuId}
         themeMode={themeMode}
         onToggleTheme={setThemeMode}
+        onOpenGateModal={() => setIsGateModalOpen(true)}
       />
 
       <main className="flex-1 flex flex-col p-2.5 gap-2 w-full h-[calc(100vh-40px)] max-w-[1500px] mx-auto overflow-hidden">
@@ -387,8 +407,18 @@ export const App: React.FC = () => {
           telemetry={telemetry}
           onStartExport={handleStartExport}
           canExport={canExport}
+          isGpuSupported={activeGpu?.is_supported ?? true}
         />
       </main>
+
+      {/* 硬件设备准入门禁拦截弹窗警告 */}
+      <HardwareGateModal
+        isOpen={isGateModalOpen}
+        gpu={activeGpu}
+        supportedGpus={gpus.filter(g => g.is_supported)}
+        onSelectGpu={(id) => setSelectedGpuId(id)}
+        onClose={() => setIsGateModalOpen(false)}
+      />
     </div>
   );
 };

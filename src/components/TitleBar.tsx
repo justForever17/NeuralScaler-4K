@@ -15,6 +15,7 @@ interface TitleBarProps {
   onSelectGpu: (id: string) => void;
   themeMode: ThemeMode;
   onToggleTheme: (mode: ThemeMode) => void;
+  onOpenGateModal?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -23,6 +24,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onSelectGpu,
   themeMode,
   onToggleTheme,
+  onOpenGateModal,
 }) => {
   const activeGpu = gpus.find(g => g.id === selectedGpuId) || gpus[0];
 
@@ -42,10 +44,18 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </div>
       </div>
 
-      {/* Center: Real Physical GPU Accelerator Dropdown */}
+      {/* Center: Real Physical GPU Accelerator Dropdown with Gate Status */}
       <div className="flex items-center gap-1.5 shrink-0">
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg dark:bg-white/[0.04] bg-black/[0.04] border dark:border-white/[0.08] border-black/[0.08]">
-          <IconGpu className={`w-3.5 h-3.5 shrink-0 ${activeGpu?.is_discrete ? 'text-emerald-400' : 'text-cyan-400'}`} />
+        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border transition-all ${
+          activeGpu?.is_supported
+            ? 'dark:bg-white/[0.04] bg-black/[0.04] dark:border-white/[0.08] border-black/[0.08]'
+            : 'dark:bg-red-500/[0.08] bg-red-500/[0.08] dark:border-red-500/30 border-red-500/30 text-red-500'
+        }`}>
+          <IconGpu className={`w-3.5 h-3.5 shrink-0 ${
+            activeGpu?.is_supported
+              ? (activeGpu?.vendor === 'NVIDIA' ? 'text-emerald-400' : 'text-cyan-400')
+              : 'text-red-500'
+          }`} />
           <span className="text-[11px] text-gray-400 dark:text-gray-400 text-gray-500 whitespace-nowrap">加速引擎:</span>
           
           <div className="relative inline-block">
@@ -56,14 +66,27 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             >
               {gpus.map((gpu) => (
                 <option key={gpu.id} value={gpu.id} className="dark:bg-[#181A22] bg-white dark:text-gray-200 text-gray-800">
-                  {gpu.name} ({roundVram(gpu.vram_mb)}GB{gpu.is_discrete ? ' · 推荐' : ''})
+                  {gpu.name} ({roundVram(gpu.vram_mb)}GB · {gpu.is_supported ? (gpu.vendor === 'NVIDIA' ? 'N卡支持' : 'A卡支持') : '门禁拦截'})
                 </option>
               ))}
             </select>
             <IconChevronDown className="w-3 h-3 text-gray-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 animate-pulse ml-0.5"></span>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ml-0.5 ${
+            activeGpu?.is_supported ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'
+          }`} />
+
+          {!activeGpu?.is_supported && (
+            <button
+              type="button"
+              onClick={onOpenGateModal}
+              className="text-[10px] text-red-500 font-bold px-1 py-0.2 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 transition-colors cursor-pointer"
+              title="查看门禁拦截详情"
+            >
+              门禁拦截
+            </button>
+          )}
         </div>
       </div>
 

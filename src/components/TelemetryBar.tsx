@@ -6,12 +6,14 @@ interface TelemetryBarProps {
   telemetry: TelemetryState;
   onStartExport: () => void;
   canExport: boolean;
+  isGpuSupported?: boolean;
 }
 
 export const TelemetryBar: React.FC<TelemetryBarProps> = ({
   telemetry,
   onStartExport,
-  canExport
+  canExport,
+  isGpuSupported = true
 }) => {
   const percent = telemetry.totalFrames > 0
     ? Math.min(100, Math.round((telemetry.currentFrame / telemetry.totalFrames) * 100))
@@ -59,7 +61,7 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
         <div className="flex-1"></div>
       )}
 
-      {/* Right: Core Action Win11 Fluent Button (Zero Emoji) */}
+      {/* Right: Core Action Button with Hardware Gate Guard */}
       <div className="flex items-center gap-2 shrink-0">
         <button
           type="button"
@@ -67,17 +69,19 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
           onClick={onStartExport}
           className={`px-5 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 flex items-center gap-2 shadow-sm shrink-0 whitespace-nowrap active:scale-[0.98] ${
             canExport && !telemetry.isProcessing
-              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-bold shadow-[0_2px_8px_rgba(16,185,129,0.3)] hover:shadow-[0_4px_12px_rgba(16,185,129,0.4)] cursor-pointer border border-emerald-400/40'
+              ? (!isGpuSupported 
+                  ? 'bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-400 hover:to-red-400 text-white font-bold shadow-[0_2px_8px_rgba(239,68,68,0.3)] cursor-pointer border border-red-400/50' 
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-bold shadow-[0_2px_8px_rgba(16,185,129,0.3)] hover:shadow-[0_4px_12px_rgba(16,185,129,0.4)] cursor-pointer border border-emerald-400/40')
               : telemetry.isProcessing
               ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 cursor-wait'
               : 'dark:bg-white/[0.05] bg-black/[0.05] text-gray-400 dark:text-gray-500 border dark:border-white/[0.06] border-black/[0.06] cursor-not-allowed'
           }`}
         >
-          <IconZap className={`w-4 h-4 shrink-0 ${telemetry.isProcessing ? 'animate-bounce text-emerald-400' : 'text-black'}`} />
+          <IconZap className={`w-4 h-4 shrink-0 ${telemetry.isProcessing ? 'animate-bounce text-emerald-400' : (!isGpuSupported ? 'text-white' : 'text-black')}`} />
           <span>
             {telemetry.isProcessing 
               ? `4K 渲染中 (${percent}%)...` 
-              : '开始 4K 神经超分导出'}
+              : (!isGpuSupported ? '开始超分 (显卡门禁受限)' : '开始 4K 神经超分导出')}
           </span>
         </button>
       </div>

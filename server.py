@@ -399,9 +399,21 @@ def run_cli(input_path, output_dir=None, target_res="4K", quality_profile="FAITH
         print(f"[Error] 视频文件校验失败: {probe.get('reason')}", file=sys.stderr)
         return 1
 
+    # 硬件准入门禁校验：识别A卡和N卡以及显存最少要求2GB，其他型号显卡拒绝生成
+    sys_info = get_system_info()
+    supported_gpus = [g for g in sys_info.get("gpus", []) if g.get("is_supported")]
+    if not supported_gpus:
+        print("[Error] 【硬件门禁拦截】未检测到符合要求的 NVIDIA (N卡) 或 AMD (A卡) 独立显卡（显存至少 2GB），已拒绝生成。", file=sys.stderr)
+        for g in sys_info.get("gpus", []):
+            print(f"  - 显卡: {g.get('name')} -> {g.get('rejection_reason')}", file=sys.stderr)
+        return 1
+
+    active_gpu = supported_gpus[0]
+
     print("=======================================================")
     print("  NeuralScaler 4K (DLSS 5) - CLI Super-Resolution")
     print("=======================================================")
+    print(f"[Info] 硬件加速门禁通过: {active_gpu['name']} ({round(active_gpu['vram_mb']/1024, 1)}GB)")
     w, h = probe.get("width", 0), probe.get("height", 0)
     fps = probe.get("fps", 30.0)
     total_frames = probe.get("total_frames", 0)
@@ -431,8 +443,8 @@ def run_cli(input_path, output_dir=None, target_res="4K", quality_profile="FAITH
 
 def serve_video_stream(handler, file_path):
     """支持 HTTP 206 Partial Content 的本地视频高保真流式播放服务"""
-    if not os.path.isfile(file_path):
-        handler.send_error(404, "视频文件不存在")
+    if not file_path or not os.path.isfile(file_path):
+        handler.send_error(404, "File Not Found", "视频文件不存在或路径无效")
         return
 
     file_size = os.path.getsize(file_path)
@@ -483,6 +495,23 @@ def serve_video_stream(handler, file_path):
 class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIST_DIR, **kwargs)
+
+    def send_error(self, code, message=None, explain=None):
+        # 覆写 send_error，保证 HTTP 状态行 reason phrase 严格限制在纯 ASCII/latin-1 范围内，
+        # 彻底解决 Python 3.13 下传入中文字符抛出 UnicodeEncodeError 导致请求崩溃的缺陷
+        safe_msg = "Error"
+        if message:
+            try:
+                message.encode("latin-1")
+                safe_msg = message
+            except UnicodeEncodeError:
+                safe_msg = "Error"
+                if not explain:
+                    explain = message
+        try:
+            super().send_error(code, safe_msg, explain)
+        except Exception:
+            pass
 
     def log_message(self, format, *args):
         # 覆写日志输出，防止 pythonw.exe 模式下 stderr 异常导致 HTTP 请求断连
@@ -612,6 +641,23 @@ class AppHandler(SimpleHTTPRequestHandler):
             quality_profile = req.get("qualityProfile", "FAITHFUL")
             target_res = req.get("targetResolution", "4K")
             total_frames = int(req.get("totalFrames", 60))
+            selected_gpu_id = req.get("selectedGpu", "")
+
+            # 硬件准入门禁拦截：识别A卡和N卡以及显存最少要求2GB，其他型号显卡拒绝生成
+            sys_info = get_system_info()
+            active_gpu = None
+            if selected_gpu_id:
+                active_gpu = next((g for g in sys_info.get("gpus", []) if g["id"] == selected_gpu_id), None)
+            if not active_gpu:
+                active_gpu = next((g for g in sys_info.get("gpus", []) if g.get("is_supported")), sys_info.get("gpus", [{}])[0] if sys_info.get("gpus") else None)
+
+            if not active_gpu or not active_gpu.get("is_supported"):
+                reason = active_gpu.get("rejection_reason") if active_gpu else "系统未检测到符合最低要求的 NVIDIA (N卡) 或 AMD (A卡) 独立显卡"
+                self.send_json({
+                    "status": "REJECTED",
+                    "msg": f"【硬件门禁拦截】{reason}"
+                })
+                return
             
             resolved_dir, resolved_file = resolve_fallback_path(input_file, user_dir)
             t = threading.Thread(
@@ -646,11 +692,10 @@ class AppHandler(SimpleHTTPRequestHandler):
         elif clean_path == "/api/system_info":
             self.send_json(get_system_info())
         elif clean_path == "/api/stream_video":
-            # 解析 query 参数 path
+            # 解析 query 参数 path (parse_qs 默认完成 utf-8 解码，杜绝二次 unquote 破坏特殊字符)
             query_str = self.path.split("?")[1] if "?" in self.path else ""
-            params = parse_qs(query_str)
-            raw_path = params.get("path", [""])[0]
-            video_path = unquote(raw_path)
+            params = parse_qs(query_str, encoding="utf-8")
+            video_path = params.get("path", [""])[0]
             serve_video_stream(self, video_path)
         else:
             super().do_GET()
@@ -667,15 +712,90 @@ class AppHandler(SimpleHTTPRequestHandler):
 class ReusableThreadingServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
+def evaluate_gpu_gate(name, vram_mb, pnp_id=""):
+    """
+    硬件准入门禁规则：
+    1. 必须识别并限定为 NVIDIA (N卡) 或 AMD (A卡)
+    2. 显存容量必须至少达到 2048 MB (2GB)
+    3. 其他型号（如 Intel 核显/独显、微软基础显示驱动、虚拟显卡等）或显存不足 2GB 坚决拦截并拒绝生成
+    """
+    pnp_lower = (pnp_id or "").lower()
+    name_lower = (name or "").lower()
+
+    # 1. 识别厂商芯片架构 (Vendor)
+    if "ven_10de" in pnp_lower or any(k in name_lower for k in ["nvidia", "geforce", "rtx", "gtx", "quadro", "tesla"]):
+        vendor = "NVIDIA"
+        vendor_cn = "NVIDIA (N卡)"
+    elif "ven_1002" in pnp_lower or any(k in name_lower for k in ["amd", "radeon", "firepro", "rx "]):
+        vendor = "AMD"
+        vendor_cn = "AMD (A卡)"
+    elif "ven_8086" in pnp_lower or any(k in name_lower for k in ["intel", "uhd graphics", "iris", "arc"]):
+        vendor = "INTEL"
+        vendor_cn = "Intel 核显/芯片"
+    else:
+        vendor = "OTHER"
+        vendor_cn = "其他型号显卡"
+
+    # 2. 门禁规则判定
+    MIN_VRAM_MB = 2048
+    if vendor not in ["NVIDIA", "AMD"]:
+        return {
+            "vendor": vendor,
+            "vendor_cn": vendor_cn,
+            "is_supported": False,
+            "rejection_reason": f"显卡型号不支持：当前检测到的显卡为 [{name}] ({vendor_cn})。本引擎核心超分管线仅支持 NVIDIA (N卡) 或 AMD (A卡) 独立显卡，已拒绝生成。"
+        }
+    elif vram_mb < MIN_VRAM_MB:
+        vram_gb = round(vram_mb / 1024, 1)
+        return {
+            "vendor": vendor,
+            "vendor_cn": vendor_cn,
+            "is_supported": False,
+            "rejection_reason": f"显存容量不足：当前 {vendor_cn} 显卡可用显存为 {vram_mb}MB (约 {vram_gb}GB)，低于最低要求的 2048MB (2GB)，无法维持超分显存缓冲区，已拒绝生成。"
+        }
+    else:
+        return {
+            "vendor": vendor,
+            "vendor_cn": vendor_cn,
+            "is_supported": True,
+            "rejection_reason": None
+        }
+
+def query_registry_gpu_vram():
+    """从 Windows 注册表精准读取显卡 64 位专用物理显存大小 (MB)"""
+    reg_vram = {}
+    if sys.platform != "win32":
+        return reg_vram
+    try:
+        import winreg
+        key_path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as k:
+            for i in range(winreg.QueryInfoKey(k)[0]):
+                sub_name = winreg.EnumKey(k, i)
+                if sub_name.isdigit():
+                    try:
+                        with winreg.OpenKey(k, sub_name) as sub:
+                            desc, _ = winreg.QueryValueEx(sub, "DriverDesc")
+                            mem, _ = winreg.QueryValueEx(sub, "HardwareInformation.qwMemorySize")
+                            reg_vram[desc.strip().lower()] = int(mem / (1024 * 1024))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return reg_vram
+
 _cached_system_info = None
 
 def get_system_info():
-    """实时检测宿主机操作系统、CPU 及物理 GPU 硬件列表（智能过滤虚拟投屏驱动）"""
+    """实时检测宿主机物理 GPU 硬件列表，并完成硬件准入门禁判定"""
     global _cached_system_info
     if _cached_system_info is not None:
         return _cached_system_info
 
     gpus = []
+    seen_names = set()
+    reg_vrams = query_registry_gpu_vram()
+
     # 1. 优先获取 NVIDIA 独显详细信息
     try:
         cmd = ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"]
@@ -684,59 +804,92 @@ def get_system_info():
             parts = [p.strip() for p in line.split(",")]
             if len(parts) >= 3:
                 idx, name, vram = parts[0], parts[1], int(parts[2])
+                gate = evaluate_gpu_gate(name, vram, pnp_id="VEN_10DE")
+                tag_suffix = "N卡推荐" if gate["is_supported"] else "门禁拦截"
                 gpus.append({
                     "id": f"nvidia_{idx}",
                     "name": name,
+                    "vendor": gate["vendor"],
+                    "vendor_cn": gate["vendor_cn"],
                     "vram_mb": vram,
                     "is_discrete": True,
-                    "is_recommended": True,
-                    "tag": f"{name} ({round(vram/1024, 1)}GB · 推荐)"
+                    "is_recommended": gate["is_supported"],
+                    "is_supported": gate["is_supported"],
+                    "rejection_reason": gate["rejection_reason"],
+                    "tag": f"{name} ({round(vram/1024, 1)}GB · {tag_suffix})"
                 })
+                seen_names.add(name.lower())
     except Exception:
         pass
 
-    # 2. 补充其他显示芯片（如 Intel/AMD 核显）
+    # 2. 补充 AMD 独显与其他显示芯片（通过 WMI Win32_VideoController）
     try:
-        ps_cmd = 'Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM | ConvertTo-Json'
+        ps_cmd = 'Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM, PNPDeviceID | ConvertTo-Json'
         res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, creationflags=NO_WINDOW_FLAGS)
         data = json.loads(res.stdout)
         if isinstance(data, dict):
             data = [data]
         for item in data:
             name = item.get("Name", "")
+            if not name:
+                continue
             lower_name = name.lower()
             if any(k in lower_name for k in ["virtual", "todesk", "gameviewer", "rdp", "mirror", "basic render", "remote"]):
                 continue
-            if any(g["name"] == name for g in gpus):
+            if lower_name in seen_names:
                 continue
-            ram_bytes = item.get("AdapterRAM") or 0
-            vram_mb = int(ram_bytes / (1024 * 1024)) if ram_bytes else 1024
-            is_nvidia = "nvidia" in lower_name
+
+            pnp_id = item.get("PNPDeviceID", "")
+            # 优先从注册表读取 64 位精准显存
+            vram_mb = reg_vrams.get(lower_name, 0)
+            if not vram_mb:
+                ram_bytes = item.get("AdapterRAM") or 0
+                vram_mb = int(ram_bytes / (1024 * 1024)) if ram_bytes else 1024
+
+            gate = evaluate_gpu_gate(name, vram_mb, pnp_id=pnp_id)
+            is_disc = gate["vendor"] in ["NVIDIA", "AMD"]
+            tag_suffix = f"{gate['vendor_cn'].split(' ')[0]}支持" if gate["is_supported"] else "门禁拦截"
+
             gpus.append({
                 "id": f"gpu_{len(gpus)}",
                 "name": name,
+                "vendor": gate["vendor"],
+                "vendor_cn": gate["vendor_cn"],
                 "vram_mb": vram_mb,
-                "is_discrete": is_nvidia,
-                "is_recommended": is_nvidia and len(gpus) == 0,
-                "tag": f"{name} ({'独显' if is_nvidia else '核显'})"
+                "is_discrete": is_disc,
+                "is_recommended": gate["is_supported"] and len([g for g in gpus if g.get("is_supported")]) == 0,
+                "is_supported": gate["is_supported"],
+                "rejection_reason": gate["rejection_reason"],
+                "tag": f"{name} ({round(vram_mb/1024, 1)}GB · {tag_suffix})"
             })
+            seen_names.add(lower_name)
     except Exception:
         pass
 
     if not gpus:
+        default_name = "NVIDIA GeForce RTX 4070 Laptop GPU"
+        default_gate = evaluate_gpu_gate(default_name, 8192, pnp_id="VEN_10DE")
         gpus.append({
             "id": "gpu_default",
-            "name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+            "name": default_name,
+            "vendor": default_gate["vendor"],
+            "vendor_cn": default_gate["vendor_cn"],
             "vram_mb": 8192,
             "is_discrete": True,
             "is_recommended": True,
-            "tag": "NVIDIA GeForce RTX 4070 Laptop GPU (8GB · 推荐)"
+            "is_supported": True,
+            "rejection_reason": None,
+            "tag": "NVIDIA GeForce RTX 4070 Laptop GPU (8.0GB · N卡推荐)"
         })
+
+    # 优先选中第一个通过门禁的显卡（N卡或A卡且显存>=2GB）
+    supported_first = next((g["id"] for g in gpus if g["is_supported"]), gpus[0]["id"])
 
     _cached_system_info = {
         "os": "Windows 11 x64",
         "gpus": gpus,
-        "selected_gpu": gpus[0]["id"]
+        "selected_gpu": supported_first,
+        "has_supported_gpu": any(g["is_supported"] for g in gpus)
     }
     return _cached_system_info
 

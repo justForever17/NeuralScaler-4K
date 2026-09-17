@@ -43,9 +43,13 @@ export interface TelemetryState {
 export interface GpuDevice {
   id: string;
   name: string;
+  vendor: 'NVIDIA' | 'AMD' | 'INTEL' | 'OTHER';
+  vendor_cn?: string;
   vram_mb: number;
   is_discrete: boolean;
-  is_recommended: boolean;
+  is_recommended?: boolean;
+  is_supported: boolean;
+  rejection_reason?: string | null;
   tag: string;
 }
 
@@ -53,6 +57,7 @@ export interface SystemInfo {
   os: string;
   gpus: GpuDevice[];
   selected_gpu: string;
+  has_supported_gpu?: boolean;
 }
 
 export type ThemeMode = 'dark' | 'light' | 'auto';
