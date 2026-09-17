@@ -5,7 +5,7 @@ import unittest
 import subprocess
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "NEURALSCALER_MOCK_GPU": "NVIDIA"}
 
 class TestCliPipeline(unittest.TestCase):
     def test_01_cli_help_and_version(self):

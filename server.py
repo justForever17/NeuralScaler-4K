@@ -1025,6 +1025,24 @@ _cached_system_info = None
 
 def get_system_info():
     """实时检测宿主机物理 GPU 硬件列表，并完成硬件准入门禁判定"""
+    mock_env = os.environ.get("NEURALSCALER_MOCK_GPU")
+    if mock_env:
+        return {
+            "gpus": [{
+                "id": "gpu_mock",
+                "name": f"Mock {mock_env} RTX 4070 (CI Harness)",
+                "vendor": mock_env,
+                "vendor_cn": f"{mock_env} (CI Harness)",
+                "vram_mb": 8192,
+                "is_discrete": True,
+                "is_recommended": True,
+                "is_supported": True,
+                "rejection_reason": None,
+                "tag": f"Mock {mock_env} (8.0GB · 支持)"
+            }],
+            "selected_gpu": "gpu_mock"
+        }
+
     global _cached_system_info
     if _cached_system_info is not None:
         return _cached_system_info
