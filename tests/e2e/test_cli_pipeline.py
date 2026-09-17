@@ -5,6 +5,7 @@ import unittest
 import subprocess
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 class TestCliPipeline(unittest.TestCase):
     def test_01_cli_help_and_version(self):
@@ -14,7 +15,9 @@ class TestCliPipeline(unittest.TestCase):
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            encoding="utf-8",
+            errors="replace",
+            env=UTF8_ENV
         )
         self.assertEqual(res_py.returncode, 0)
         self.assertIn("--cli", res_py.stdout)
@@ -26,7 +29,9 @@ class TestCliPipeline(unittest.TestCase):
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            encoding="utf-8",
+            errors="replace",
+            env=UTF8_ENV
         )
         self.assertEqual(res_node_help.returncode, 0)
         self.assertIn("Usage:", res_node_help.stdout)
@@ -38,7 +43,9 @@ class TestCliPipeline(unittest.TestCase):
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            encoding="utf-8",
+            errors="replace",
+            env=UTF8_ENV
         )
         self.assertEqual(res_node_ver.returncode, 0)
         self.assertIn("2.2.0", res_node_ver.stdout)
@@ -53,7 +60,9 @@ class TestCliPipeline(unittest.TestCase):
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            encoding="utf-8",
+            errors="replace",
+            env=UTF8_ENV
         )
         self.assertEqual(res.returncode, 0, f"CLI processing failed: {res.stderr}")
         self.assertIn("SUCCESS", res.stdout)
@@ -65,7 +74,9 @@ class TestCliPipeline(unittest.TestCase):
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            encoding="utf-8",
+            errors="replace",
+            env=UTF8_ENV
         )
         self.assertNotEqual(res_missing.returncode, 0)
 
@@ -76,7 +87,9 @@ class TestCliPipeline(unittest.TestCase):
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            encoding="utf-8",
+            errors="replace",
+            env=UTF8_ENV
         )
         self.assertNotEqual(res_empty.returncode, 0)
 

@@ -64,6 +64,9 @@ jobs:
           pwsh tests/e2e/test_installer_lifecycle.ps1 -SetupExe release/NeuralScaler-4K-Setup-v2.2.0.exe
 
       - name: Run Python Test Suite
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: python -m unittest discover -s tests -t . -p "test_*.py"
 
       - name: Create Release Archive

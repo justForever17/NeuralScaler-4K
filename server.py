@@ -42,10 +42,20 @@ class SafeLogWriter:
 if sys.stdout is None or not hasattr(sys.stdout, "write"):
     log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "NeuralScaler", "logs")
     sys.stdout = SafeLogWriter(os.path.join(log_dir, "server.log"))
+elif hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 if sys.stderr is None or not hasattr(sys.stderr, "write"):
     log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "NeuralScaler", "logs")
     sys.stderr = SafeLogWriter(os.path.join(log_dir, "server_err.log"))
+elif hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist")
