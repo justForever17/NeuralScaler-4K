@@ -43,23 +43,32 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
         </div>
       </div>
 
-      {/* Middle: Export Progress Bar (Only visible or emphasized when processing) */}
-      {telemetry.isProcessing ? (
-        <div className="flex-1 max-w-sm mx-2 flex flex-col gap-1 min-w-[120px]">
-          <div className="flex justify-between items-center text-[10px] dark:text-gray-400 text-gray-600 font-mono">
-            <span>超分进度</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}% ({telemetry.currentFrame}/{telemetry.totalFrames} 帧)</span>
+      {/* Middle: Export Progress Bar & Queue Indicator */}
+      <div className="flex-1 flex items-center justify-center gap-3 px-2">
+        {telemetry.queue && telemetry.queue.length > 0 && (
+          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 dark:bg-cyan-500/20 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 text-[11px] font-medium shadow-sm shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span>待处理队列: {telemetry.queue.length} 个任务</span>
           </div>
-          <div className="w-full h-1.5 rounded-full dark:bg-white/[0.06] bg-black/[0.08] overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-200"
-              style={{ width: `${percent}%` }}
-            />
+        )}
+
+        {telemetry.isProcessing ? (
+          <div className="flex-1 max-w-sm flex flex-col gap-1 min-w-[120px]">
+            <div className="flex justify-between items-center text-[10px] dark:text-gray-400 text-gray-600 font-mono">
+              <span>超分进度</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{percent}% ({telemetry.currentFrame}/{telemetry.totalFrames} 帧)</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full dark:bg-white/[0.06] bg-black/[0.08] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-200"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="flex-1"></div>
-      )}
+        ) : (
+          <div className="flex-1"></div>
+        )}
+      </div>
 
       {/* Right: Core Action Button with Hardware Gate Guard */}
       <div className="flex items-center gap-2 shrink-0">

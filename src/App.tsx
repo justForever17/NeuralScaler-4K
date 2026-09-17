@@ -7,21 +7,18 @@ import { HardwareGateModal } from './components/HardwareGateModal';
 import { VideoMetadata, AppConfig, TelemetryState, QualityProfile, GpuDevice, ThemeMode } from './types';
 
 export const App: React.FC = () => {
-  const [video, setVideo] = useState<VideoMetadata | null>({
-    filePath: 'C:\\Users\\sunny\\Desktop\\1\\微信视频2026-09-16_105304_528.mp4',
-    fileName: '微信视频2026-09-16_105304_528.mp4',
-    width: 540,
-    height: 960,
-    durationSeconds: 15.07,
-    fps: 30,
-    codec: 'h264',
-    fileSizeBytes: 2454078,
-    status: 'RECOMMENDED',
-    statusMessage: '推荐输入画质 (540x960)，支持 4K 神经重绘与硬件超分加速。'
-  });
+  const [video, setVideo] = useState<VideoMetadata | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [outputVideoFile, setOutputVideoFile] = useState<string>('');
   const [targetResolution, setTargetResolution] = useState<'4K' | '2X'>('4K');
+
+  // Auto-dismiss queue toast after 4.5s
+  useEffect(() => {
+    if (!toastMessage) return;
+    const t = setTimeout(() => setToastMessage(null), 4500);
+    return () => clearTimeout(t);
+  }, [toastMessage]);
 
   const [config, setConfig] = useState<AppConfig>({
     qualityProfile: 'FAITHFUL',
@@ -186,32 +183,91 @@ export const App: React.FC = () => {
     }
   }, [config.outputDir]);
 
-  // Initial load check
+  // Load initial video if started with right-click argument or CLI parameter
   useEffect(() => {
-    if (video?.filePath) {
-      fetch('/api/resolve_path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputFile: video.filePath, userDir: config.outputDir })
-      })
+    fetch('/api/initial_video')
       .then(res => res.json())
       .then(data => {
-        if (data.resolvedDir) {
-          setConfig(prev => ({ ...prev, fallbackDir: data.resolvedDir + '\\' }));
+        if (data.initial_video && typeof data.initial_video === 'object') {
+          const v = data.initial_video;
+          const newVideo: VideoMetadata = {
+            filePath: v.filePath,
+            fileName: v.fileName,
+            width: v.width,
+            height: v.height,
+            durationSeconds: v.duration,
+            fps: v.fps,
+            codec: v.codec,
+            fileSizeBytes: v.size,
+            status: v.status,
+            statusMessage: v.reason
+          };
+          setVideo(newVideo);
+          if (v.filePath) {
+            verifyExportedFile(v.filePath, config.outputDir);
+            fetch('/api/resolve_path', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ inputFile: v.filePath, userDir: config.outputDir })
+            })
+            .then(r => r.json())
+            .then(d => {
+              if (d.resolvedDir) {
+                setConfig(prev => ({ ...prev, fallbackDir: d.resolvedDir + '\\' }));
+              }
+            })
+            .catch(() => {});
+            setTelemetry(prev => ({ ...prev, totalFrames: v.total_frames || 60, currentFrame: 0 }));
+          }
         }
       })
       .catch(() => {});
+  }, [verifyExportedFile, config.outputDir]);
 
-      verifyExportedFile(video.filePath, config.outputDir);
-    }
-  }, []);
-
-  // Poll export status and GPU telemetry
+  // Poll export status, GPU telemetry, external injection, and task queue
   useEffect(() => {
     const timer = window.setInterval(async () => {
       try {
         const res = await fetch('/api/export_status');
         const data = await res.json();
+
+        // 1. External injected video while idle: automatically switch preview
+        if (data.pending_injected_video && !data.is_processing) {
+          const p = data.pending_injected_video;
+          const newVideo: VideoMetadata = {
+            filePath: p.filePath,
+            fileName: p.fileName,
+            width: p.width,
+            height: p.height,
+            durationSeconds: p.duration,
+            fps: p.fps,
+            codec: p.codec,
+            fileSizeBytes: p.size,
+            status: p.status,
+            statusMessage: p.reason
+          };
+          setVideo(newVideo);
+          verifyExportedFile(p.filePath, config.outputDir);
+          setTelemetry(prev => ({ ...prev, totalFrames: p.total_frames || 60, currentFrame: 0 }));
+          fetch('/api/consume_injected_video', { method: 'POST' }).catch(() => {});
+        }
+
+        // 2. Queue updates and toast alerts
+        if (data.queue && Array.isArray(data.queue)) {
+          setTelemetry(prev => {
+            const prevQueueLen = prev.queue ? prev.queue.length : 0;
+            if (data.queue.length > prevQueueLen && prev.isProcessing) {
+              const latest = data.queue[data.queue.length - 1];
+              setToastMessage(`已将视频 [${latest.fileName}] 加入渲染排队队列（当前第 ${data.queue.length} 位）`);
+            }
+            return {
+              ...prev,
+              queue: data.queue
+            };
+          });
+        }
+
+        // 3. Export status processing / finished
         if (data.status === 'PROCESSING') {
           setTelemetry(prev => ({
             ...prev,
@@ -249,10 +305,10 @@ export const App: React.FC = () => {
       } catch (e) {
         // quiet error
       }
-    }, telemetry.isProcessing ? 400 : 2000);
+    }, telemetry.isProcessing ? 400 : 1500);
 
     return () => clearInterval(timer);
-  }, [telemetry.isProcessing]);
+  }, [telemetry.isProcessing, config.outputDir, verifyExportedFile]);
 
   // Handle native file selection
   const handleNativeSelectFile = async () => {
@@ -378,6 +434,24 @@ export const App: React.FC = () => {
         onToggleTheme={setThemeMode}
         onOpenGateModal={() => setIsGateModalOpen(true)}
       />
+
+      {/* 待处理队列 Fluent UI 浮层 Toast 通知 */}
+      {toastMessage && (
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[999] px-4 py-2.5 rounded-xl bg-gray-900/95 dark:bg-[#1C1F2B]/95 backdrop-blur-md border border-cyan-500/50 text-white dark:text-cyan-200 text-xs font-medium shadow-2xl flex items-center gap-2.5 animate-fade-in pointer-events-auto">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+          <span>{toastMessage}</span>
+          <button 
+            type="button" 
+            onClick={() => setToastMessage(null)}
+            className="ml-2 text-gray-400 hover:text-white p-0.5 hover:bg-white/10 rounded cursor-pointer transition-colors"
+            title="关闭"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       <main className="flex-1 flex flex-col p-2.5 gap-2 w-full h-[calc(100vh-40px)] max-w-[1500px] mx-auto overflow-hidden">
         {/* Sleek Workstation Toolbar with Dropdowns (Single Row, Never Wraps) */}

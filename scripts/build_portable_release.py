@@ -103,7 +103,7 @@ echo [Info] 请保持本控制台运行，关闭本窗口将终止超分任务�
 echo ========================================================
 echo.
 
-"%PY_EXE%" server.py %*
+"%PY_EXE%" server.py %* --gui
 
 echo.
 echo [Info] 核心服务已退出。按任意键关闭窗口...
@@ -119,6 +119,12 @@ pause >nul
     if os.path.exists(src_ns_bat):
         shutil.copy2(src_ns_bat, os.path.join(RELEASE_DIR, "ns.bat"))
         log("Copied ns.bat (shorthand CLI launcher)")
+
+    # 5.2 Copy launch_menu.vbs (silent context menu launcher)
+    src_vbs = os.path.join(PROJECT_ROOT, "launch_menu.vbs")
+    if os.path.exists(src_vbs):
+        shutil.copy2(src_vbs, os.path.join(RELEASE_DIR, "launch_menu.vbs"))
+        log("Copied launch_menu.vbs (silent context menu launcher)")
 
     # 6. Generate README.txt
     readme_content = '''========================================================

@@ -47,18 +47,18 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFile
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"; Tasks: desktopicon
 
 [Registry]
-; Windows Explorer Context Menu integration for .mp4, .mov, .mkv
+; Windows Explorer Context Menu integration for .mp4, .mov, .mkv (Silent windowless dispatch)
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mp4\shell\NeuralScaler4K"; ValueType: string; ValueName: ""; ValueData: "使用 NeuralScaler 4K 进行超分"; Flags: uninsdeletekey; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mp4\shell\NeuralScaler4K"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\app.ico"""; Flags: uninsdeletekey; Tasks: contextmenu
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mp4\shell\NeuralScaler4K\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mp4\shell\NeuralScaler4K\command"; ValueType: string; ValueName: ""; ValueData: """{sys}\wscript.exe"" //B //Nologo ""{app}\launch_menu.vbs"" ""%1"""; Flags: uninsdeletekey; Tasks: contextmenu
 
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mov\shell\NeuralScaler4K"; ValueType: string; ValueName: ""; ValueData: "使用 NeuralScaler 4K 进行超分"; Flags: uninsdeletekey; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mov\shell\NeuralScaler4K"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\app.ico"""; Flags: uninsdeletekey; Tasks: contextmenu
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mov\shell\NeuralScaler4K\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mov\shell\NeuralScaler4K\command"; ValueType: string; ValueName: ""; ValueData: """{sys}\wscript.exe"" //B //Nologo ""{app}\launch_menu.vbs"" ""%1"""; Flags: uninsdeletekey; Tasks: contextmenu
 
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mkv\shell\NeuralScaler4K"; ValueType: string; ValueName: ""; ValueData: "使用 NeuralScaler 4K 进行超分"; Flags: uninsdeletekey; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mkv\shell\NeuralScaler4K"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\app.ico"""; Flags: uninsdeletekey; Tasks: contextmenu
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mkv\shell\NeuralScaler4K\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mkv\shell\NeuralScaler4K\command"; ValueType: string; ValueName: ""; ValueData: """{sys}\wscript.exe"" //B //Nologo ""{app}\launch_menu.vbs"" ""%1"""; Flags: uninsdeletekey; Tasks: contextmenu
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "立即运行 {#MyAppName}"; Flags: nowait postinstall skipifsilent

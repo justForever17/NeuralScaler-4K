@@ -139,6 +139,37 @@ def set_native_window_theme(is_dark: bool):
     except Exception:
         pass
 
+def bring_app_window_to_front():
+    """使用 Win32 API 将已有的 Edge 桌面视窗还原并置于最顶层获得焦点"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+
+        found_hwnds = []
+        def enum_cb(hwnd, lparam):
+            if user32.IsWindowVisible(hwnd):
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value
+                    if "NeuralScaler" in title or "127.0.0.1:1420" in title:
+                        found_hwnds.append(hwnd)
+            return True
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+
+        SW_RESTORE = 9
+        for hwnd in found_hwnds:
+            user32.ShowWindow(hwnd, SW_RESTORE)
+            user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
 
 export_state = {
     "is_processing": False,
@@ -263,6 +294,87 @@ def resolve_fallback_path(input_file, user_dir=None):
         counter += 1
     return base_dir, out_file
 
+class ExportQueueManager:
+    """线程安全的 FIFO 视频超分任务队列与并发管理器（严守 GPU 渲染单并发限制）"""
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.queue = []  # [{id, inputFile, outputFile, outputDir, totalFrames, qualityProfile, targetRes, fileName, fileSizeBytes, status}]
+        self.pending_injected_video = None  # 待机时外部注入的视频元数据字典
+        self.initial_video = None           # 首次启动时携带的视频信息
+        self.task_counter = 0
+
+    def add_to_queue(self, input_file, user_dir="", quality_profile="FAITHFUL", target_res="4K"):
+        with self.lock:
+            self.task_counter += 1
+            task_id = f"task_{int(time.time())}_{self.task_counter}"
+            probe = probe_file(input_file)
+            if probe.get("status") == "REJECTED":
+                return {"status": "REJECTED", "reason": probe.get("reason", "视频校验失败")}
+            
+            resolved_dir, resolved_file = resolve_fallback_path(input_file, user_dir)
+            total_frames = int(probe.get("total_frames", 60))
+            task_item = {
+                "id": task_id,
+                "inputFile": os.path.abspath(input_file),
+                "outputFile": resolved_file,
+                "outputDir": resolved_dir,
+                "totalFrames": total_frames,
+                "qualityProfile": quality_profile,
+                "targetRes": target_res,
+                "fileName": os.path.basename(input_file),
+                "fileSizeBytes": os.path.getsize(input_file) if os.path.exists(input_file) else 0,
+                "status": "QUEUED"
+            }
+            self.queue.append(task_item)
+            return {
+                "status": "QUEUED",
+                "task": task_item,
+                "queue_position": len(self.queue),
+                "queue_length": len(self.queue),
+                "fileName": task_item["fileName"]
+            }
+
+    def get_queue(self):
+        with self.lock:
+            return list(self.queue)
+
+    def remove_from_queue(self, task_id):
+        with self.lock:
+            orig_len = len(self.queue)
+            self.queue = [t for t in self.queue if t["id"] != task_id]
+            return len(self.queue) < orig_len
+
+    def pop_next_task(self):
+        with self.lock:
+            if self.queue:
+                return self.queue.pop(0)
+            return None
+
+    def trigger_next_if_idle(self):
+        """若当前空闲且队列中有待处理任务，自动顺延启动下一任务，确保 GPU 并发度严格为 1"""
+        with self.lock:
+            if export_state["is_processing"]:
+                return
+            if not self.queue:
+                return
+            next_task = self.queue.pop(0)
+        
+        print(f"\n[NeuralScaler-Queue] 自动调度队列下一任务: {next_task['fileName']} (剩余排队数: {len(self.queue)})")
+        t = threading.Thread(
+            target=run_export_pipeline,
+            args=(
+                next_task["inputFile"],
+                next_task["outputFile"],
+                next_task["totalFrames"],
+                next_task["qualityProfile"],
+                next_task["targetRes"]
+            )
+        )
+        t.daemon = True
+        t.start()
+
+queue_manager = ExportQueueManager()
+
 def run_export_pipeline(input_file, output_file, total_frames, quality_profile="FAITHFUL", target_res="4K"):
     global export_state
     export_state["is_processing"] = True
@@ -384,6 +496,7 @@ def run_export_pipeline(input_file, output_file, total_frames, quality_profile="
         print(f"[NeuralScaler-GPU] [EXCEPTION] {str(e)}")
     finally:
         export_state["is_processing"] = False
+        queue_manager.trigger_next_if_idle()
 
 def run_cli(input_path, output_dir=None, target_res="4K", quality_profile="FAITHFUL"):
     """无头命令行超分直接执行入口"""
@@ -635,6 +748,48 @@ class AppHandler(SimpleHTTPRequestHandler):
                 else:
                     self.send_json({"exists": False, "outputPath": ""})
 
+        elif clean_path == "/api/inject_video":
+            file_path = req.get("filePath", "")
+            if not file_path or not os.path.exists(file_path):
+                self.send_json({"status": "REJECTED", "reason": f"文件不存在: {file_path}"})
+                return
+            probe = probe_file(file_path)
+            if probe.get("status") == "REJECTED":
+                self.send_json({"status": "REJECTED", "reason": probe.get("reason", "文件校验未通过")})
+                return
+
+            bring_app_window_to_front()
+
+            if export_state["is_processing"]:
+                res = queue_manager.add_to_queue(file_path)
+                self.send_json(res)
+            else:
+                probe["filePath"] = os.path.abspath(file_path)
+                probe["fileName"] = os.path.basename(file_path)
+                queue_manager.pending_injected_video = probe
+                self.send_json({
+                    "status": "LOADED",
+                    "fileName": probe["fileName"],
+                    "metadata": probe
+                })
+            return
+
+        elif clean_path == "/api/activate_window":
+            bring_app_window_to_front()
+            self.send_json({"status": "OK"})
+            return
+
+        elif clean_path == "/api/consume_injected_video":
+            queue_manager.pending_injected_video = None
+            self.send_json({"status": "OK"})
+            return
+
+        elif clean_path == "/api/queue_remove":
+            task_id = req.get("taskId", "")
+            removed = queue_manager.remove_from_queue(task_id)
+            self.send_json({"status": "OK" if removed else "NOT_FOUND"})
+            return
+
         elif clean_path == "/api/start_export":
             input_file = req.get("inputFile", "")
             user_dir = req.get("userDir", "")
@@ -658,7 +813,18 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "msg": f"【硬件门禁拦截】{reason}"
                 })
                 return
-            
+
+            # 并发隔离与任务队列：若当前已有任务正在渲染，自动加入 FIFO 队列，坚决杜绝 GPU 显存竞争
+            if export_state["is_processing"]:
+                q_res = queue_manager.add_to_queue(input_file, user_dir, quality_profile, target_res)
+                self.send_json({
+                    "status": "QUEUED",
+                    "msg": f"已有渲染任务正在执行，已将视频加入排队队列（第 {q_res.get('queue_position')} 位）",
+                    "queue_position": q_res.get("queue_position"),
+                    "task": q_res.get("task")
+                })
+                return
+
             resolved_dir, resolved_file = resolve_fallback_path(input_file, user_dir)
             t = threading.Thread(
                 target=run_export_pipeline, 
@@ -688,7 +854,27 @@ class AppHandler(SimpleHTTPRequestHandler):
                 tele = get_gpu_telemetry()
                 export_state["gpu_load"] = tele["gpu_load"]
                 export_state["vram_used_mb"] = tele["vram_used_mb"]
-            self.send_json(export_state)
+            resp = dict(export_state)
+            resp["queue"] = queue_manager.get_queue()
+            resp["pending_injected_video"] = queue_manager.pending_injected_video
+            self.send_json(resp)
+        elif clean_path == "/api/ping":
+            self.send_json({
+                "status": "OK",
+                "service": "NeuralScaler-4K",
+                "version": "2.2.1",
+                "is_processing": export_state["is_processing"],
+                "queue_length": len(queue_manager.get_queue())
+            })
+        elif clean_path == "/api/initial_video":
+            self.send_json({
+                "initial_video": queue_manager.pending_injected_video or queue_manager.initial_video
+            })
+        elif clean_path == "/api/queue_status":
+            self.send_json({
+                "queue": queue_manager.get_queue(),
+                "is_processing": export_state["is_processing"]
+            })
         elif clean_path == "/api/system_info":
             self.send_json(get_system_info())
         elif clean_path == "/api/stream_video":
@@ -950,6 +1136,46 @@ def open_browser():
     except Exception as e:
         print(f"[Warn] 自动唤起纯净视窗失败: {e}，请手动访问: {url}")
 
+def probe_existing_instance(port=1420, timeout=0.6):
+    """向 127.0.0.1:PORT 发送探针，检测是否已有实例在监听"""
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/ping")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                return True, data
+    except Exception:
+        pass
+    return False, None
+
+def send_ipc_injection(file_path, port=1420):
+    """向已有主实例注入视频文件"""
+    try:
+        abs_path = os.path.abspath(file_path)
+        data = json.dumps({"filePath": abs_path}).encode("utf-8")
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/inject_video",
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        return {"status": "ERROR", "msg": str(e)}
+
+def send_ipc_activate(port=1420):
+    """向已有主实例发送激活唤醒窗口指令"""
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/activate_window",
+            data=b"{}",
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        return {"status": "ERROR", "msg": str(e)}
+
 def main():
     parser = argparse.ArgumentParser(description="NeuralScaler 4K (DLSS 5) - Video Super-Resolution CLI & GUI", add_help=False)
     parser.add_argument("--cli", action="store_true", help="Run in headless CLI mode")
@@ -969,13 +1195,45 @@ def main():
         
     input_file = args.input or args.positional_input
     
-    # 若指定了 --cli 或传入了视频文件且未显式指定 --gui，进入无头 CLI 超分模式
-    if (args.cli or input_file) and not args.gui:
+    # 1. 显式指定 --cli 时，进入无头 CLI 模式
+    if args.cli:
         if not input_file:
             print("[Error] CLI 模式需要指定输入视频路径 (-i/--input <file.mp4>)", file=sys.stderr)
             sys.exit(1)
         code = run_cli(input_file, args.output_dir, args.target, args.quality)
         sys.exit(code)
+
+    # 2. 若传入了文件且未指定 --gui，但当前处于交互终端控制台模式（如直接命令行键入 ns input.mp4）
+    if input_file and not args.gui and sys.stdin and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
+        code = run_cli(input_file, args.output_dir, args.target, args.quality)
+        sys.exit(code)
+
+    # 3. GUI 模式（包含桌面快捷方式、右键菜单、双击 bat 或显式 --gui）：
+    # 单实例探测：检查 1420 是否已有实例在运行
+    is_alive, _ = probe_existing_instance(PORT)
+    if is_alive:
+        if input_file:
+            res = send_ipc_injection(input_file, PORT)
+            if res.get("status") == "QUEUED":
+                print(f"[Info] 检测到 NeuralScaler 4K 已在运行，视频已加入渲染排队队列（第 {res.get('queue_position')} 位）。")
+            elif res.get("status") == "LOADED":
+                print(f"[Info] 检测到 NeuralScaler 4K 已在运行，已将视频载入现有视窗。")
+            else:
+                print(f"[Info] 视频注入结果: {res.get('status')}")
+            sys.exit(0)
+        else:
+            send_ipc_activate(PORT)
+            print(f"[Info] 检测到 NeuralScaler 4K 已在运行中，已唤醒现有视窗。")
+            sys.exit(0)
+
+    # 4. 首次冷启动主实例
+    if input_file and os.path.exists(input_file):
+        probe = probe_file(input_file)
+        if probe.get("status") != "REJECTED":
+            probe["filePath"] = os.path.abspath(input_file)
+            probe["fileName"] = os.path.basename(input_file)
+            queue_manager.initial_video = probe
+            queue_manager.pending_injected_video = probe
 
     global server_instance
     # 启动健康检查与视窗唤起线程
@@ -997,16 +1255,12 @@ def main():
         server.serve_forever()
     except OSError as e:
         if "10048" in str(e):
-            # 如果端口已被占用，检查是否已有正在运行的本程序服务
-            if wait_for_server(PORT, timeout=1.5):
-                open_browser()
-                sys.exit(0)
-            else:
-                print(f"\n[错误] 端口 {PORT} 已被占用！")
-                print(f"可能已有旧的 NeuralScaler 实例正在运行，请在任务管理器中结束 python.exe 后重试。")
+            # 即使发生极端端口竞争，也仅唤醒主视窗并安全退出，绝不再次拉起第二个 Edge 壳！
+            send_ipc_activate(PORT)
+            sys.exit(0)
         else:
             print(f"\n[错误] 网络服务启动失败: {e}")
-        sys.exit(1)
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

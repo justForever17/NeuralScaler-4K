@@ -27,6 +27,19 @@ export interface AppConfig {
   deblockStrength: 'WEAK' | 'MEDIUM' | 'OFF';
 }
 
+export interface QueuedTask {
+  id: string;
+  inputFile: string;
+  outputFile: string;
+  outputDir: string;
+  totalFrames: number;
+  qualityProfile: QualityProfile;
+  targetRes: '4K' | '2X';
+  fileName: string;
+  fileSizeBytes: number;
+  status: 'QUEUED' | 'PROCESSING' | 'FINISHED' | 'ERROR';
+}
+
 export interface TelemetryState {
   isProcessing: boolean;
   isPaused: boolean;
@@ -38,6 +51,7 @@ export interface TelemetryState {
   vramTotalMb: number;
   etaSeconds: number;
   circuitBreakerStatus: 'OPERATIONAL' | 'SUSPENDED_VRAM' | 'TDR_RECOVERING' | 'HALTED_DISK_FULL';
+  queue?: QueuedTask[];
 }
 
 export interface GpuDevice {
