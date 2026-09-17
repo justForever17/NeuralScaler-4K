@@ -1,8 +1,39 @@
 {
-  "name": "neuralscaler-dlss5",
-  "private": true,
+  "name": "neuralscaler",
   "version": "2.2.0",
+  "description": "Lightweight, offline 4K video super-resolution CLI powered by NVIDIA DLSS 5 and hardware acceleration.",
   "type": "module",
+  "bin": {
+    "neuralscaler": "./bin/cli.js"
+  },
+  "files": [
+    "bin/cli.js",
+    "dist",
+    "server.py",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "neuralscaler",
+    "dlss5",
+    "video-upscaling",
+    "4k",
+    "super-resolution",
+    "cli",
+    "nvidia",
+    "hardware-acceleration"
+  ],
+  "author": "justForever17",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justForever17/NeuralScaler-4K.git"
+  },
+  "bugs": {
+    "url": "https://github.com/justForever17/NeuralScaler-4K/issues"
+  },
+  "homepage": "https://github.com/justForever17/NeuralScaler-4K#readme",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

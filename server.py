@@ -10,6 +10,9 @@ from urllib.parse import parse_qs, unquote
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import argparse
+
+is_cli_mode = False
 
 # 确保在 pythonw.exe 无终端模式下输出流安全，防止 NoneType 导致 HTTP 服务崩溃
 class SafeLogWriter:
@@ -324,17 +327,29 @@ def run_export_pipeline(input_file, output_file, total_frames, quality_profile="
                     export_state["current_fps"] = round(f_val / elapsed, 1)
                     
                     now = time.time()
-                    if now - last_log_time >= 0.5:
+                    if now - last_log_time >= 0.3:
                         last_log_time = now
                         tele = get_gpu_telemetry()
                         export_state["gpu_load"] = tele["gpu_load"]
                         export_state["vram_used_mb"] = tele["vram_used_mb"]
-                        print(f"[NeuralScaler-GPU] 4K 超分进度: 帧 {f_val}/{total_frames} ({export_state['percent']}%) | 速度: {export_state['current_fps']} fps | GPU: {tele['gpu_load']}% | 显存: {tele['vram_used_mb']}MB")
+                        if is_cli_mode and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+                            bar_len = 25
+                            filled = int(bar_len * export_state["percent"] // 100)
+                            bar_str = "=" * filled + "-" * (bar_len - filled)
+                            rem_frames = max(0, total_frames - f_val)
+                            eta_sec = int(rem_frames / max(0.1, export_state["current_fps"])) if export_state["current_fps"] > 0 else 0
+                            sys.stdout.write(f"\r[Progress] [{bar_str}] {export_state['percent']:3d}% | {f_val}/{total_frames} frames | {export_state['current_fps']:4.1f} fps | GPU: {tele['gpu_load']}% | VRAM: {tele['vram_used_mb']}MB | ETA: {eta_sec}s")
+                            sys.stdout.flush()
+                        else:
+                            print(f"[NeuralScaler-GPU] 4K 超分进度: 帧 {f_val}/{total_frames} ({export_state['percent']}%) | 速度: {export_state['current_fps']} fps | GPU: {tele['gpu_load']}% | 显存: {tele['vram_used_mb']}MB")
                 except Exception:
                     pass
         
         proc.wait()
         if proc.returncode == 0:
+            if is_cli_mode and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+                sys.stdout.write("\n")
+                sys.stdout.flush()
             export_state["percent"] = 100
             export_state["current_frame"] = total_frames
             export_state["status"] = "FINISHED"
@@ -359,6 +374,50 @@ def run_export_pipeline(input_file, output_file, total_frames, quality_profile="
         print(f"[NeuralScaler-GPU] [EXCEPTION] {str(e)}")
     finally:
         export_state["is_processing"] = False
+
+def run_cli(input_path, output_dir=None, target_res="4K", quality_profile="FAITHFUL"):
+    """无头命令行超分直接执行入口"""
+    global is_cli_mode
+    is_cli_mode = True
+    
+    if not input_path or not os.path.exists(input_path):
+        print(f"[Error] 输入视频文件不存在: {input_path}", file=sys.stderr)
+        return 1
+
+    probe = probe_file(input_path)
+    if probe.get("status") == "REJECTED":
+        print(f"[Error] 视频文件校验失败: {probe.get('reason')}", file=sys.stderr)
+        return 1
+
+    print("=======================================================")
+    print("  NeuralScaler 4K (DLSS 5) - CLI Super-Resolution")
+    print("=======================================================")
+    w, h = probe.get("width", 0), probe.get("height", 0)
+    fps = probe.get("fps", 30.0)
+    total_frames = probe.get("total_frames", 0)
+    codec = probe.get("codec", "unknown")
+    print(f"[Info] 源视频: {input_path}")
+    print(f"[Info] 规格: {w}x{h} @ {fps:.1f} fps ({codec}), 总帧数: {total_frames}")
+
+    base_dir, out_file = resolve_fallback_path(input_path, output_dir)
+    print(f"[Info] 目标输出: {out_file}")
+    print(f"[Info] 超分模式: {quality_profile} | 目标画幅: {target_res}")
+    print("[Info] 正在启动硬件加速超分管线...\n")
+
+    run_export_pipeline(
+        input_file=input_path,
+        output_file=out_file,
+        total_frames=total_frames,
+        quality_profile=quality_profile,
+        target_res=target_res
+    )
+
+    if export_state["status"] == "FINISHED":
+        print(f"[Success] 4K 超分成功完成！产出文件: {out_file}")
+        return 0
+    else:
+        print(f"[Error] 4K 超分任务失败: {export_state.get('error_msg')}", file=sys.stderr)
+        return 1
 
 def serve_video_stream(handler, file_path):
     """支持 HTTP 206 Partial Content 的本地视频高保真流式播放服务"""
@@ -729,6 +788,32 @@ def open_browser():
         print(f"[Warn] 自动唤起纯净视窗失败: {e}，请手动访问: {url}")
 
 def main():
+    parser = argparse.ArgumentParser(description="NeuralScaler 4K (DLSS 5) - Video Super-Resolution CLI & GUI", add_help=False)
+    parser.add_argument("--cli", action="store_true", help="Run in headless CLI mode")
+    parser.add_argument("-i", "--input", help="Path to input video file")
+    parser.add_argument("-o", "--output-dir", help="Target output directory")
+    parser.add_argument("-t", "--target", default="4K", choices=["4K", "2X"], help="Target resolution (default: 4K)")
+    parser.add_argument("-q", "--quality", default="FAITHFUL", choices=["FAITHFUL", "NATURAL", "CINEMATIC"], help="Quality profile (default: FAITHFUL)")
+    parser.add_argument("-h", "--help", action="store_true", help="Show this help message")
+    parser.add_argument("--gui", action="store_true", help="Force launch GUI desktop window")
+    parser.add_argument("positional_input", nargs="?", help="Input video file path")
+    
+    args, unknown = parser.parse_known_args()
+    
+    if args.help:
+        parser.print_help()
+        sys.exit(0)
+        
+    input_file = args.input or args.positional_input
+    
+    # 若指定了 --cli 或传入了视频文件且未显式指定 --gui，进入无头 CLI 超分模式
+    if (args.cli or input_file) and not args.gui:
+        if not input_file:
+            print("[Error] CLI 模式需要指定输入视频路径 (-i/--input <file.mp4>)", file=sys.stderr)
+            sys.exit(1)
+        code = run_cli(input_file, args.output_dir, args.target, args.quality)
+        sys.exit(code)
+
     global server_instance
     # 启动健康检查与视窗唤起线程
     t = threading.Thread(target=open_browser, daemon=True)

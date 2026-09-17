@@ -92,3 +92,20 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if (-not $env:NPM_TOKEN) {
+            Write-Warning "[Notice] NPM_TOKEN secret is not set in repository settings. Skipping npm publish."
+            Write-Warning "To enable automatic npm publish, add your npm token as NPM_TOKEN in GitHub Repository Secrets."
+            exit 0
+          }
+          Write-Host "[Info] Authenticating with npm registry..."
+          npm config set //registry.npmjs.org/:_authToken $env:NPM_TOKEN
+          Write-Host "[Info] Publishing neuralscaler to npm registry..."
+          npm publish --access public
+          Write-Host "[Success] Package published to npm successfully!"
