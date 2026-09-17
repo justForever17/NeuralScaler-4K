@@ -77,10 +77,12 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          $ErrorActionPreference = "Continue"
           Write-Host "[Gate 3] Running NPM Pre-flight checks for neuralscaler@$env:RELEASE_VERSION..."
           
           # 1. Check if version already exists on npmjs.org to prevent collision
-          $published = npm view "neuralscaler@$env:RELEASE_VERSION" version 2>$null
+          $published = & npm view "neuralscaler@$env:RELEASE_VERSION" version 2>$null
+          $global:LASTEXITCODE = 0
           if ($published -eq $env:RELEASE_VERSION) {
             Write-Error "[Gate 3 Failed] Version $env:RELEASE_VERSION is already published on npmjs.org! Please bump version before release."
             exit 1
@@ -91,17 +93,20 @@ jobs:
             Write-Warning "[Notice] NPM_TOKEN is not configured in repository secrets. NPM publish will be skipped."
             echo "NPM_AUTH_VALID=false" >> $env:GITHUB_ENV
           } else {
-            npm config set //registry.npmjs.org/:_authToken $env:NPM_TOKEN
-            $whoami = npm whoami 2>&1
+            $null = npm config set //registry.npmjs.org/:_authToken $env:NPM_TOKEN
+            $whoami = & npm whoami 2>&1
             if ($LASTEXITCODE -ne 0) {
               Write-Warning "[Warning] NPM_TOKEN appears to be invalid or expired! Details: $whoami"
               Write-Warning "To enable automatic npm publish, generate a fresh Automation token at https://www.npmjs.com/settings/tokens and update GitHub Secrets."
               echo "NPM_AUTH_VALID=false" >> $env:GITHUB_ENV
+              $global:LASTEXITCODE = 0
             } else {
               Write-Host "[Gate 3 Passed] Successfully authenticated as npm user: $whoami"
               echo "NPM_AUTH_VALID=true" >> $env:GITHUB_ENV
             }
           }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       # ==========================================
       # Build & Assembly
