@@ -24,8 +24,21 @@ jobs:
 
       - name: Set up FFmpeg
         uses: FedericoCarboni/setup-ffmpeg@v3
+        continue-on-error: true
         with:
           ffmpeg-version: release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure FFmpeg in PATH
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            Write-Host "Adding repository bin/ to PATH"
+            $binPath = Join-Path $PWD "bin"
+            Add-Content -Path $env:GITHUB_PATH -Value $binPath
+            $env:PATH = "$binPath;$env:PATH"
+          }
+          ffmpeg -version | Select-Object -First 1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
