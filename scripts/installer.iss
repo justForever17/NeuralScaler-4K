@@ -1,8 +1,10 @@
 ; Inno Setup Script for NeuralScaler 4K (DLSS 5)
-; Generates standalone single-file installer: NeuralScaler-4K-Setup-v2.2.0.exe
+; Generates standalone single-file installer: NeuralScaler-4K-Setup-v{#MyAppVersion}.exe
 
 #define MyAppName "NeuralScaler 4K"
+#ifndef MyAppVersion
 #define MyAppVersion "2.2.0"
+#endif
 #define MyAppPublisher "justForever17"
 #define MyAppURL "https://github.com/justForever17/NeuralScaler-4K"
 #define MyAppExeName "NeuralScaler.bat"
@@ -18,7 +20,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={localappdata}\Programs\NeuralScaler-4K
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-OutputBaseFilename=NeuralScaler-4K-Setup-v2.2.0
+OutputBaseFilename=NeuralScaler-4K-Setup-v{#MyAppVersion}
 OutputDir=..\release
 SetupIconFile=..\public\app.ico
 UninstallDisplayIcon={app}\app.ico

@@ -1,9 +1,18 @@
 param (
     [Parameter(Mandatory=$false)]
-    [string]$SetupExe = "release\NeuralScaler-4K-Setup-v2.2.0.exe"
+    [string]$SetupExe = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $SetupExe -or -not (Test-Path $SetupExe)) {
+    $candidates = Get-ChildItem -Path "release" -Filter "NeuralScaler-4K-Setup-*.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+    if ($candidates -and $candidates.Count -gt 0) {
+        $SetupExe = $candidates[0].FullName
+    } elseif (-not $SetupExe) {
+        $SetupExe = "release\NeuralScaler-4K-Setup-v2.2.0.exe"
+    }
+}
 
 function Assert-Condition($Condition, $Message) {
     if (-not $Condition) {

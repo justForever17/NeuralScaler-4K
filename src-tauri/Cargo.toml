@@ -1,6 +1,6 @@
 [package]
 name = "neuralscaler-core"
-version = "2.2.0"
+version = "2.2.1"
 description = "NeuralScaler DLSS 5 Core Pipeline & IPC Daemon"
 edition = "2021"
 

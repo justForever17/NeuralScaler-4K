@@ -45,19 +45,22 @@ NeuralScaler 4K 是基于 NVIDIA DLSS 5（深度学习超分辨率 5 代）神�
 # 无需手动安装，直接通过 npx 运行：
 npx neuralscaler <input.mp4> --target 4K
 
-# 或全局安装后日常调用：
+# 或全局安装后直接使用简写命令 ns 极速超分：
 npm install -g neuralscaler
-neuralscaler input.mp4 -o D:\Output4K\ -t 4K -q FAITHFUL
+ns input.mp4 -o D:\Output4K\ -t 4K -q FAITHFUL
+
+# 也可在便携版/项目根目录直接调用：
+ns.bat input.mp4 -t 4K
 ```
 
 #### 方式 B：单文件安装向导（推荐桌面用户）
-1. 从 Releases 页面下载 `NeuralScaler-4K-Setup-v2.2.0.exe`。
+1. 从 [Releases](https://github.com/justForever17/NeuralScaler-4K/releases) 页面下载最新版单文件安装包（如 `NeuralScaler-4K-Setup-v*.exe`）。
 2. 双击运行安装程序，按提示完成向导式安装。
 3. 自动生成桌面高清图标快捷方式，并自动集成 Windows 资源管理器右键快捷菜单（支持在任意 `.mp4` / `.mov` / `.mkv` 视频上右键直接调用超分）。
 
 #### 方式 C：便携绿色版运行（免安装）
-1. 从 Releases 页面下载 `NeuralScaler-4K-Portable-windows-x64.zip` 并解压。
-2. 双击解压目录中的 `NeuralScaler.bat` 即可直接启动引擎并唤起独立工作站视窗。
+1. 从 [Releases](https://github.com/justForever17/NeuralScaler-4K/releases) 页面下载便携版压缩包（如 `NeuralScaler-4K-Portable-windows-x64-v*.zip`）并解压。
+2. 双击解压目录中的 `NeuralScaler.bat` 即可直接启动引擎并唤起独立工作站视窗（命令行中亦可直接使用 `ns.bat`）。
 
 #### 方式 D：源码构建与本地运行
 ```powershell
@@ -94,18 +97,18 @@ NeuralScaler 4K is an offline, high-performance 4K video super-resolution workst
 # Run immediately via npx without manual installation:
 npx neuralscaler <input.mp4> --target 4K
 
-# Or install globally for regular command-line workflows:
+# Or install globally and use the shorthand 'ns' command:
 npm install -g neuralscaler
-neuralscaler input.mp4 -o ./output_4k/ -t 4K -q FAITHFUL
+ns input.mp4 -o ./output_4k/ -t 4K -q FAITHFUL
 ```
 
 #### Method B: Standalone Installer (Recommended for Windows)
-1. Download `NeuralScaler-4K-Setup-v2.2.0.exe` from [Releases](https://github.com/justForever17/NeuralScaler-4K/releases).
+1. Download the latest `NeuralScaler-4K-Setup-v*.exe` from [Releases](https://github.com/justForever17/NeuralScaler-4K/releases).
 2. Run the wizard setup to get desktop shortcuts and Windows Explorer context menu integration (`Right-click -> Super-resolve with NeuralScaler 4K`).
 
 #### Method C: Portable Archive
-1. Download and extract `NeuralScaler-4K-Portable-windows-x64.zip`.
-2. Double-click `NeuralScaler.bat` to launch the engine and desktop interface.
+1. Download and extract the latest `NeuralScaler-4K-Portable-windows-x64-v*.zip` from [Releases](https://github.com/justForever17/NeuralScaler-4K/releases).
+2. Double-click `NeuralScaler.bat` to launch the engine and desktop interface (or use `ns.bat` from terminal).
 
 ---
 

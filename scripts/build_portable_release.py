@@ -114,6 +114,12 @@ pause >nul
         f.write(bat_content)
     log("Created NeuralScaler.bat (Explicit Console Launcher)")
 
+    # 5.1 Copy ns.bat (shorthand CLI launcher)
+    src_ns_bat = os.path.join(PROJECT_ROOT, "ns.bat")
+    if os.path.exists(src_ns_bat):
+        shutil.copy2(src_ns_bat, os.path.join(RELEASE_DIR, "ns.bat"))
+        log("Copied ns.bat (shorthand CLI launcher)")
+
     # 6. Generate README.txt
     readme_content = '''========================================================
   NeuralScaler 4K - 便携独立运行版 (Portable Edition)

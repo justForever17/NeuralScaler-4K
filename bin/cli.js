@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
 // Read version from package.json
-let version = '2.2.0';
+let version = 'unknown';
 try {
   const pkgPath = path.join(projectRoot, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -33,8 +33,13 @@ NeuralScaler 4K (DLSS 5) - Video Super-Resolution CLI v${version}
 Copyright (c) 2026 justForever17 (MIT License)
 
 Usage:
+  ns <input-video> [options]
+  ns4k <input-video> [options]
   neuralscaler <input-video> [options]
   npx neuralscaler <input-video> [options]
+
+Command Aliases:
+  ns, ns4k, neuralscaler
 
 Arguments:
   <input-video>             Path to the source video (.mp4, .mov, .mkv, .avi, etc.)
@@ -48,10 +53,11 @@ Options:
   -h, --help                Show this help message
 
 Examples:
+  ns sample.mp4
+  ns input.mp4 --target 4K --quality CINEMATIC
+  ns4k input.mp4 -o D:\\Output4K\\ -t 2X
   npx neuralscaler sample.mp4
-  npx neuralscaler input.mp4 --target 4K --quality CINEMATIC
-  npx neuralscaler input.mp4 -o D:\\Output4K\\ -t 2X
-  neuralscaler --gui
+  ns --gui
 `);
 }
 

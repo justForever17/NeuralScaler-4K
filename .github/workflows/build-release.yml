@@ -1,12 +1,12 @@
-name: Build Portable Release
+name: Build & Release NeuralScaler 4K
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (e.g. v2.2.0)'
+        description: 'Release Tag (e.g. v2.2.1)'
         required: false
-        default: 'v2.2.0'
+        default: ''
   push:
     tags:
       - 'v*'
@@ -33,16 +33,84 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ==========================================
+      # 3-Stage Release Gating & Dynamic Versioning
+      # ==========================================
+      - name: Release Gate 1 - Dynamic Version Extraction
+        id: version_gate
+        shell: pwsh
+        run: |
+          $refName = "${{ github.ref_name }}"
+          $inputTag = "${{ inputs.release_tag }}"
+          $tag = if ($refName -like "v*") { $refName } elseif ($inputTag) { $inputTag } else { "" }
+          
+          # Extract version from package.json as source of truth
+          $pkgVersion = (Get-Content package.json | ConvertFrom-Json).version
+          if (-not $pkgVersion) {
+            Write-Error "[Gate Failed] Could not parse version from package.json!"
+            exit 1
+          }
+          
+          $targetVersion = if ($tag -like "v*") { $tag.Substring(1) } else { $pkgVersion }
+          Write-Host "[Gate 1] Target Release Version: $targetVersion (Tag: $tag, package.json: $pkgVersion)"
+          
+          echo "RELEASE_VERSION=$targetVersion" >> $env:GITHUB_ENV
+          echo "RELEASE_TAG=v$targetVersion" >> $env:GITHUB_ENV
+
+      - name: Release Gate 2 - Version Consistency Check
+        shell: pwsh
+        run: |
+          Write-Host "[Gate 2] Validating version consistency across repository..."
+          python scripts/version_manager.py check --tag "v$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "[Gate 2 Failed] Version mismatch detected between Git Tag and project files. Aborting release."
+            exit 1
+          }
+
+      - name: Release Gate 3 - NPM Pre-flight & Token Validation
+        shell: pwsh
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          Write-Host "[Gate 3] Running NPM Pre-flight checks for neuralscaler@$env:RELEASE_VERSION..."
+          
+          # 1. Check if version already exists on npmjs.org to prevent collision
+          $published = npm view "neuralscaler@$env:RELEASE_VERSION" version 2>$null
+          if ($published -eq $env:RELEASE_VERSION) {
+            Write-Error "[Gate 3 Failed] Version $env:RELEASE_VERSION is already published on npmjs.org! Please bump version before release."
+            exit 1
+          }
+
+          # 2. Check NPM_TOKEN validity and auth status
+          if (-not $env:NPM_TOKEN) {
+            Write-Warning "[Notice] NPM_TOKEN is not configured in repository secrets. NPM publish will be skipped."
+            echo "NPM_AUTH_VALID=false" >> $env:GITHUB_ENV
+          } else {
+            npm config set //registry.npmjs.org/:_authToken $env:NPM_TOKEN
+            $whoami = npm whoami 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "[Warning] NPM_TOKEN appears to be invalid or expired! Details: $whoami"
+              Write-Warning "To enable automatic npm publish, generate a fresh Automation token at https://www.npmjs.com/settings/tokens and update GitHub Secrets."
+              echo "NPM_AUTH_VALID=false" >> $env:GITHUB_ENV
+            } else {
+              Write-Host "[Gate 3 Passed] Successfully authenticated as npm user: $whoami"
+              echo "NPM_AUTH_VALID=true" >> $env:GITHUB_ENV
+            }
+          }
+
+      # ==========================================
+      # Build & Assembly
+      # ==========================================
       - name: Install Frontend Dependencies
         run: npm ci || npm install
 
       - name: Build Frontend
         run: npm run build
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
 
       - name: Assemble Portable Package
         run: python scripts/build_portable_release.py
@@ -56,12 +124,15 @@ jobs:
       - name: Build Standalone Single-File Installer
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" scripts/installer.iss
+          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" /DMyAppVersion=$env:RELEASE_VERSION scripts/installer.iss
 
+      # ==========================================
+      # 9-Stage Runner Lifecycle Acceptance Test & Python Test Suite
+      # ==========================================
       - name: Run Installer Lifecycle & Zero-Residue Acceptance Test
         shell: pwsh
         run: |
-          pwsh tests/e2e/test_installer_lifecycle.ps1 -SetupExe release/NeuralScaler-4K-Setup-v2.2.0.exe
+          pwsh tests/e2e/test_installer_lifecycle.ps1 -SetupExe "release/NeuralScaler-4K-Setup-v$env:RELEASE_VERSION.exe"
 
       - name: Run Python Test Suite
         env:
@@ -69,18 +140,21 @@ jobs:
           PYTHONUTF8: "1"
         run: python -m unittest discover -s tests -t . -p "test_*.py"
 
+      # ==========================================
+      # Package & Release
+      # ==========================================
       - name: Create Release Archive
         shell: pwsh
         run: |
-          Compress-Archive -Path "release\NeuralScaler-4K-Portable" -DestinationPath "release\NeuralScaler-4K-Portable-windows-x64.zip" -Force
+          Compress-Archive -Path "release\NeuralScaler-4K-Portable" -DestinationPath "release\NeuralScaler-4K-Portable-windows-x64-v$env:RELEASE_VERSION.zip" -Force
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: NeuralScaler-4K-Release-Assets
+          name: NeuralScaler-4K-Release-Assets-v${{ env.RELEASE_VERSION }}
           path: |
-            release/NeuralScaler-4K-Setup-v2.2.0.exe
-            release/NeuralScaler-4K-Portable-windows-x64.zip
+            release/NeuralScaler-4K-Setup-v${{ env.RELEASE_VERSION }}.exe
+            release/NeuralScaler-4K-Portable-windows-x64-v${{ env.RELEASE_VERSION }}.zip
           retention-days: 7
 
       - name: Create GitHub Release
@@ -88,8 +162,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/NeuralScaler-4K-Setup-v2.2.0.exe
-            release/NeuralScaler-4K-Portable-windows-x64.zip
+            release/NeuralScaler-4K-Setup-v${{ env.RELEASE_VERSION }}.exe
+            release/NeuralScaler-4K-Portable-windows-x64-v${{ env.RELEASE_VERSION }}.zip
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -99,16 +173,11 @@ jobs:
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if (-not $env:NPM_TOKEN) {
-            Write-Warning "[Notice] NPM_TOKEN secret is not set in repository settings. Skipping npm publish."
-            Write-Warning "To enable automatic npm publish, add your npm token as NPM_TOKEN in GitHub Repository Secrets."
+          if ($env:NPM_AUTH_VALID -ne "true") {
+            Write-Warning "[Skip] NPM publishing skipped because NPM_TOKEN is missing or expired."
             exit 0
           }
-          Write-Host "[Info] Authenticating with npm registry..."
-          npm config set //registry.npmjs.org/:_authToken $env:NPM_TOKEN
-          Write-Host "[Info] Publishing neuralscaler to npm registry..."
+          Write-Host "[Info] Publishing neuralscaler@$env:RELEASE_VERSION to npm registry..."
           npm publish --access public
           Write-Host "[Success] Package published to npm successfully!"

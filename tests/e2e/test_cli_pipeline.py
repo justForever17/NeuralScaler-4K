@@ -36,8 +36,10 @@ class TestCliPipeline(unittest.TestCase):
         self.assertEqual(res_node_help.returncode, 0)
         self.assertIn("Usage:", res_node_help.stdout)
         self.assertIn("neuralscaler", res_node_help.stdout)
+        self.assertIn("ns", res_node_help.stdout)
+        self.assertIn("ns4k", res_node_help.stdout)
 
-        # 3. Test Node bin/cli.js --version
+        # 3. Test Node bin/cli.js --version dynamically against package.json
         res_node_ver = subprocess.run(
             ["node", "bin/cli.js", "--version"],
             cwd=PROJECT_ROOT,
@@ -48,7 +50,10 @@ class TestCliPipeline(unittest.TestCase):
             env=UTF8_ENV
         )
         self.assertEqual(res_node_ver.returncode, 0)
-        self.assertIn("2.2.0", res_node_ver.stdout)
+        import json
+        with open(os.path.join(PROJECT_ROOT, "package.json"), "r", encoding="utf-8") as f:
+            expected_ver = json.load(f)["version"]
+        self.assertIn(expected_ver, res_node_ver.stdout)
 
     def test_02_cli_headless_super_resolution(self):
         fixture_video = os.path.join(PROJECT_ROOT, "tests", "fixtures", "synth_720p_standard.mp4")
@@ -92,6 +97,22 @@ class TestCliPipeline(unittest.TestCase):
             env=UTF8_ENV
         )
         self.assertNotEqual(res_empty.returncode, 0)
+
+    def test_04_ns_bat_shorthand(self):
+        if sys.platform == "win32":
+            ns_bat = os.path.join(PROJECT_ROOT, "ns.bat")
+            self.assertTrue(os.path.exists(ns_bat), "ns.bat must exist")
+            res_bat = subprocess.run(
+                ["cmd.exe", "/c", ns_bat, "--help"],
+                cwd=PROJECT_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding="utf-8",
+                errors="replace",
+                env=UTF8_ENV
+            )
+            self.assertEqual(res_bat.returncode, 0)
+            self.assertIn("--cli", res_bat.stdout)
 
 if __name__ == "__main__":
     unittest.main()
