@@ -87,6 +87,26 @@ NeuralScaler 4K is an offline, high-performance 4K video super-resolution workst
 - **Frame-Locked Comparison Player**: Phase-locked loop synchronization dynamically compensates for browser decoding disparities between original footage and high-bitrate 4K exports, guaranteeing strict $dx=0, dy=0$ spatial alignment and zero temporal drift.
 - **Automated Lifecycle Management**: Automatic cleanup of backend server and console processes upon client exit.
 
+### Quick Start
+
+#### Method A: npm CLI (Headless Super-Resolution)
+```bash
+# Run immediately via npx without manual installation:
+npx neuralscaler <input.mp4> --target 4K
+
+# Or install globally for regular command-line workflows:
+npm install -g neuralscaler
+neuralscaler input.mp4 -o ./output_4k/ -t 4K -q FAITHFUL
+```
+
+#### Method B: Standalone Installer (Recommended for Windows)
+1. Download `NeuralScaler-4K-Setup-v2.2.0.exe` from [Releases](https://github.com/justForever17/NeuralScaler-4K/releases).
+2. Run the wizard setup to get desktop shortcuts and Windows Explorer context menu integration (`Right-click -> Super-resolve with NeuralScaler 4K`).
+
+#### Method C: Portable Archive
+1. Download and extract `NeuralScaler-4K-Portable-windows-x64.zip`.
+2. Double-click `NeuralScaler.bat` to launch the engine and desktop interface.
+
 ---
 
 ### License
